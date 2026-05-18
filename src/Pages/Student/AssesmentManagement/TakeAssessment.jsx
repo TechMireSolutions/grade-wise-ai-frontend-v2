@@ -119,6 +119,16 @@ function TakeAssessment() {
       clearError(); 
     } 
   }, [error, clearError]);
+  
+  // Auto-redirect after success
+  useEffect(() => {
+    if (isSubmitted) {
+      const timer = setTimeout(() => {
+        navigate("/student/dashboard");
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [isSubmitted, navigate]);
 
   const answeredCount = assessmentQuestions.filter(q => q.answer !== undefined).length;
   const formatTime = (s) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
@@ -366,6 +376,26 @@ function TakeAssessment() {
         </div>
       )}
 
+      {/* SUCCESS SCREEN */}
+      {isSubmitted && (
+        <div className="min-h-screen flex items-center justify-center p-4">
+          <Card className="w-full max-w-xl shadow-2xl rounded-3xl overflow-hidden border-2 border-green-500 animate-fade-in text-center p-10 bg-white">
+            <FaCheckCircle className="text-8xl text-green-500 mx-auto mb-6 animate-bounce" />
+            <h1 className="text-3xl font-bold text-gray-900 mb-4">Assessment Submitted!</h1>
+            <p className="text-gray-600 text-lg mb-8">
+              Your exam has been recorded successfully. <br/>
+              Redirecting you to the dashboard in a few seconds...
+            </p>
+            <button
+              onClick={() => navigate("/student/dashboard")}
+              className="px-8 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold rounded-xl shadow-lg transform hover:-translate-y-1 transition-all"
+            >
+              Go to Dashboard Now
+            </button>
+          </Card>
+        </div>
+      )}
+
       {/* Modal */}
       <Modal 
         isOpen={modal.isOpen} 
@@ -376,7 +406,17 @@ function TakeAssessment() {
         type={modal.type} 
         title={modal.title}
       >
-        <p className="text-lg sm:text-xl text-center">{modal.message}</p>
+        <div className="text-center p-4">
+          <p className="text-lg sm:text-xl mb-6">{modal.message}</p>
+          {modal.type === "success" && (
+            <button
+              onClick={() => navigate("/student/dashboard")}
+              className="w-full py-3 bg-green-600 text-white font-bold rounded-xl"
+            >
+              Back to Dashboard
+            </button>
+          )}
+        </div>
       </Modal>
 
       {/* Animations */}

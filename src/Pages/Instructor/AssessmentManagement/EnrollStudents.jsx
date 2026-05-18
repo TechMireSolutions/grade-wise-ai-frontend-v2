@@ -13,13 +13,10 @@ function EnrollStudents() {
 
   useEffect(() => {
     const fetch = async () => {
-      setIsLoading(true);
       try {
         await getEnrolledStudents(assessmentId);
       } catch (err) {
         showModal("error", "Error", err.message || "Failed to load students");
-      } finally {
-        setIsLoading(false);
       }
     };
     fetch();
