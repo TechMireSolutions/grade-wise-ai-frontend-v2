@@ -21,11 +21,10 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 11092
           script: |
-            # ⚠️ APNE FRONTEND FOLDER KA SAHI PATH YAHAN LIKHNA
             cd /www/wwwroot/gradewiseaiv2.techmiresolutions.com
             
-            # 1. Fresh frontend code pull karna
-            git fetch --alls
+            # 1. Fresh frontend code pull karna (Typo Fixed Here)
+            git fetch --all
             git reset --hard origin/main
             
             # 2. Packages install karna aur production build banana
