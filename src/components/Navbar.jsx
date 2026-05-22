@@ -26,8 +26,6 @@ function Navbar() {
       return [
         { name: "Home", href: "/", icon: <FaHome className="w-4 h-4" /> },
         { name: "Login", href: "/login", icon: <FaUser className="w-4 h-4" /> },
-        { name: "Admin Portal", href: "/admin-portal", icon: <FaUserShield className="w-4 h-4" /> },
-        { name: "Instructor Portal", href: "/instructor-portal", icon: <FaChalkboardTeacher className="w-4 h-4" /> },
         { name: "Sign Up", href: "/signup", icon: <FaUserGraduate className="w-4 h-4" /> },
       ];
     }

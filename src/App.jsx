@@ -14,8 +14,6 @@ import "./App.css";
 import Login from "./Pages/Login";
 import Signup from "./Pages/Signup";
 import Home from "./Pages/Home";
-import AdminLogin from "./Pages/AdminLogin";
-import InstructorLogin from "./Pages/InstructorLogin";
 
 /* =======================
    LAZY LOAD
@@ -25,6 +23,7 @@ const SetNewPassword = lazy(() => import("./Pages/SetNewPassword"));
 const VerifyEmail = lazy(() => import("./Pages/VerifyEmail"));
 const Profile = lazy(() => import("./Pages/Profile"));
 const NotFound = lazy(() => import("./Pages/NotFound"));
+
 
 /* Admin */
 const AdminDashboard = lazy(() =>
@@ -126,8 +125,6 @@ function App() {
 
           {/* PUBLIC – NO NAVBAR */}
           <Route path="/login" element={<Login />} />
-          <Route path="/admin-portal" element={<AdminLogin />} />
-          <Route path="/instructor-portal" element={<InstructorLogin />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/forgot-password" element={<ResetPassword />} />
           <Route path="/reset-password/:resetId" element={<SetNewPassword />} />

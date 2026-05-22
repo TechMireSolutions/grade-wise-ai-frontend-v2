@@ -52,14 +52,6 @@ function Login() {
       localStorage.setItem("token", token);
       axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
 
-      // RESTRICT ADMINS FROM REGULAR LOGIN
-      const adminRoles = ["admin", "super_admin"];
-      if (adminRoles.includes(response.role)) {
-        useAuthStore.getState().logout();
-        showModal("error", "Unauthorized Access", "Administrators must use the dedicated Admin Portal to log in.");
-        return;
-      }
-
       showModal("success", "Login Successful!", `Welcome back, ${response.name}!`);
 
       setTimeout(() => {
@@ -88,14 +80,6 @@ function Login() {
       const token = useAuthStore.getState().token;
       localStorage.setItem("token", token);
       axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-
-      // RESTRICT ADMINS FROM REGULAR LOGIN (GOOGLE)
-      const adminRoles = ["admin", "super_admin"];
-      if (adminRoles.includes(response.role)) {
-        useAuthStore.getState().logout();
-        showModal("error", "Unauthorized Access", "Administrators must use the dedicated Admin Portal to log in.");
-        return;
-      }
 
       showModal("success", "Welcome!", `Successfully signed in with Google! Welcome back, ${response.name}!`);
 
