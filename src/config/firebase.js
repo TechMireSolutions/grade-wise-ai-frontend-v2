@@ -11,11 +11,16 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 }
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig)
+// Safety check for Firebase API Key
+if (!firebaseConfig.apiKey) {
+  console.warn("⚠️ Firebase API Key is missing. Firebase features will not work.");
+}
+
+// Initialize Firebase (safely)
+const app = firebaseConfig.apiKey ? initializeApp(firebaseConfig) : null;
 
 // Initialize Firebase Auth
-export const auth = getAuth(app)
+export const auth = app ? getAuth(app) : null;
 
 // Initialize Google Auth Provider
 export const googleProvider = new GoogleAuthProvider()
