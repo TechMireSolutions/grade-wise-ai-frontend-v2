@@ -1,3 +1,5 @@
+// Gradewise AI App Entry
+// Synchronization trigger
 import { useEffect, lazy, Suspense } from "react";
 import {
   BrowserRouter as Router,
