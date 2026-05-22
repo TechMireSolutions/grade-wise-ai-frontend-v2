@@ -3,17 +3,38 @@ name: React Automated Frontend Deployment
 on:
   push:
     branches:
-      - main  # Jab bhi aap frontend main branch par push karenge, pipeline chal paregi
+      - main
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Executing Remote SSH Commands to Deploy
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install Dependencies & Build React App
+        run: |
+          npm install
+          npm run build
+
+      - name: Deploy Built Files via SSH
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 11092
+          source: "dist/*"
+          target: "/www/wwwroot/gradewiseaiv2.techmiresolutions.com"
+          strip_components: 1
+
+      - name: Clean up Old Files on Server via SSH Commands
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -22,22 +43,5 @@ jobs:
           port: 11092
           script: |
             cd /www/wwwroot/gradewiseaiv2.techmiresolutions.com
-            
-            # 1. Fresh code pull karo GitHub se
-            git fetch --all
-            git reset --hard origin/main
-            
-            # 2. Dependencies install karo aur naya maal build karo
-            npm install
-            npm run build
-            
-            # 3. Purani live files ko delete karo taake naya nishan bane
-            rm -rf assets index.html vite.svg
-            
-            # 4. Naye dist folder ka maal utha kar root par phenko
-            if [ -d "dist" ]; then
-              cp -r dist/* .
-              echo "✅ New Production Build deployed successfully to Root!"
-            fi
-            
-            echo "🚀 Deployment Finished!"
+            # Agar purani pull ki hui फालतू source files pari hain to unhein saaf karo
+            rm -rf src public package.json vite.config.js package-lock.json
