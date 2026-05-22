@@ -23,12 +23,21 @@ jobs:
           script: |
             cd /www/wwwroot/gradewiseaiv2.techmiresolutions.com
             
-            # 1. Fresh frontend code pull karna (Typo Fixed Here)
+            # 1. Fresh code pull karo GitHub se
             git fetch --all
             git reset --hard origin/main
             
-            # 2. Packages install karna aur production build banana
+            # 2. Dependencies install karo aur naya maal build karo
             npm install
             npm run build
             
-            echo "🚀 Live Frontend Deployment Successful!"
+            # 3. Purani live files ko delete karo taake naya nishan bane
+            rm -rf assets index.html vite.svg
+            
+            # 4. Naye dist folder ka maal utha kar root par phenko
+            if [ -d "dist" ]; then
+              cp -r dist/* .
+              echo "✅ New Production Build deployed successfully to Root!"
+            fi
+            
+            echo "🚀 Deployment Finished!"
