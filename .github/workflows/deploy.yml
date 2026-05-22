@@ -3,7 +3,7 @@ name: React Automated Frontend Deployment
 on:
   push:
     branches:
-      - main
+      - main  # Jab bhi aap main branch par push karenge, pipeline chal paregi
 
 jobs:
   build-and-deploy:
@@ -19,11 +19,17 @@ jobs:
           node-version: 18
 
       - name: Install Dependencies & Build React App
+        env:
+          # GitHub Secrets se Firebase ki key utha kar build mein inject kar rha hai
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          # Agar baki variables bhi hain to unhein bhi isi tarah niche uncomment karke daal dena:
+          # VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          # VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
         run: |
           npm install
           npm run build
 
-      - name: Deploy Built Files via SSH
+      - name: Deploy Built Files via SSH (SCP)
         uses: appleboy/scp-action@master
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -34,7 +40,7 @@ jobs:
           target: "/www/wwwroot/gradewiseaiv2.techmiresolutions.com"
           strip_components: 1
 
-      - name: Clean up Old Files on Server via SSH Commands
+      - name: Clean up Old Extra Files on Server via SSH
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -43,5 +49,6 @@ jobs:
           port: 11092
           script: |
             cd /www/wwwroot/gradewiseaiv2.techmiresolutions.com
-            # Agar purani pull ki hui फालतू source files pari hain to unhein saaf karo
+            # Agar purani pull ki hui source files galti se bachi hon to unhein saaf karo
             rm -rf src public package.json vite.config.js package-lock.json
+            echo "🚀 Live Frontend Deployment, Build, and Cleanup Successful!"
