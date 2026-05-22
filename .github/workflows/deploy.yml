@@ -3,7 +3,7 @@ name: React Automated Frontend Deployment
 on:
   push:
     branches:
-      - main  # Jab bhi aap main branch par push karenge, pipeline chal paregi
+      - main
 
 jobs:
   build-and-deploy:
@@ -18,18 +18,20 @@ jobs:
         with:
           node-version: 18
 
-      - name: Install Dependencies & Build React App
-        env:
-          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
-          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
-          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
-          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
-          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
-          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
-          VITE_API_URL: ${{ secrets.VITE_API_URL }}
-          VITE_RECAPTCHA_SITE_KEY: ${{ secrets.VITE_RECAPTCHA_SITE_KEY }}
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build React App with Forced Env Injection
         run: |
-          npm install
+          VITE_API_URL="${{ secrets.VITE_API_URL }}" \
+          VITE_FIREBASE_API_KEY="${{ secrets.VITE_FIREBASE_API_KEY }}" \
+          VITE_FIREBASE_AUTH_DOMAIN="${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}" \
+          VITE_FIREBASE_PROJECT_ID="${{ secrets.VITE_FIREBASE_PROJECT_ID }}" \
+          VITE_FIREBASE_STORAGE_BUCKET="${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}" \
+          VITE_FIREBASE_MESSAGING_SENDER_ID="${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}" \
+          VITE_FIREBASE_APP_ID="${{ secrets.VITE_FIREBASE_APP_ID }}" \
+          VITE_FIREBASE_MEASUREMENT_ID="${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}" \
+          VITE_RECAPTCHA_SITE_KEY="${{ secrets.VITE_RECAPTCHA_SITE_KEY }}" \
           npm run build
 
       - name: Deploy Built Files via SSH (SCP)
@@ -52,6 +54,5 @@ jobs:
           port: 11092
           script: |
             cd /www/wwwroot/gradewiseaiv2.techmiresolutions.com
-            # Agar purani pull ki hui source files galti se bachi hon to unhein saaf karo
             rm -rf src public package.json vite.config.js package-lock.json
-            echo "🚀 Live Frontend Deployment, Build, and Cleanup Successful!"
+            echo "🚀 Deployment completed with hard-coded environment context!"
