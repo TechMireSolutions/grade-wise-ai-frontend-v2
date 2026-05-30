@@ -21,6 +21,7 @@ import {
   FaShieldAlt,
   FaKey,
   FaCog,
+  FaRocket,
   FaPlus,
   FaSave,
 } from "react-icons/fa";
@@ -36,9 +37,47 @@ function SuperAdminDashboard() {
 
   // Config State
   const [configs, setConfigs] = useState({
-    GEMINI_KEYS: "",
-    GROQ_KEYS: "",
+    AI_PROVIDER: "gemini",
+    AI_KEYS: "",
+    AI_MODEL: "gemini-1.5-flash",
   });
+
+  const modelOptions = {
+    gemini: [
+      { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
+      { value: "gemini-1.5-flash", label: "Gemini 1.5 Flash" },
+      { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro" },
+      { value: "gemini-pro", label: "Gemini Pro" },
+    ],
+    groq: [
+      { value: "llama3-8b-8192", label: "Llama 3 8B" },
+      { value: "llama3-70b-8192", label: "Llama 3 70B" },
+      { value: "mixtral-8x7b-32768", label: "Mixtral 8x7B" },
+      { value: "gemma-7b-it", label: "Gemma 7B" },
+    ],
+    openai: [
+      { value: "gpt-4o", label: "GPT-4o" },
+      { value: "gpt-4o-mini", label: "GPT-4o Mini" },
+      { value: "gpt-4-turbo", label: "GPT-4 Turbo" },
+      { value: "gpt-3.5-turbo", label: "GPT-3.5 Turbo" },
+    ],
+    claude: [
+      { value: "claude-3-5-sonnet-20240620", label: "Claude 3.5 Sonnet" },
+      { value: "claude-3-opus-20240229", label: "Claude 3 Opus" },
+      { value: "claude-3-sonnet-20240229", label: "Claude 3 Sonnet" },
+      { value: "claude-3-haiku-20240307", label: "Claude 3 Haiku" },
+    ]
+  };
+
+  const detectProvider = (key) => {
+    const k = key.split(',')[0].trim();
+    if (!k) return null;
+    if (k.startsWith("gsk_")) return "groq";
+    if (k.startsWith("sk-ant-")) return "claude";
+    if (k.startsWith("sk-")) return "openai";
+    if (k.startsWith("AIza") || k.startsWith("AQ.")) return "gemini";
+    return null;
+  };
   const [configLoading, setConfigLoading] = useState(false);
 
   useEffect(() => {
@@ -63,8 +102,9 @@ function SuperAdminDashboard() {
       const response = await getAllConfigs();
       if (response.success) {
         setConfigs({
-          GEMINI_KEYS: response.configs.GEMINI_KEYS || "",
-          GROQ_KEYS: response.configs.GROQ_KEYS || "",
+          AI_PROVIDER: response.configs.AI_PROVIDER || "gemini",
+          AI_KEYS: response.configs.AI_KEYS || "",
+          AI_MODEL: response.configs.AI_MODEL || "gemini-1.5-flash",
         });
       }
     } catch (error) {
@@ -74,7 +114,28 @@ function SuperAdminDashboard() {
 
   const handleConfigChange = (e) => {
     const { name, value } = e.target;
-    setConfigs(prev => ({ ...prev, [name]: value }));
+    
+    if (name === "AI_KEYS") {
+      const detected = detectProvider(value);
+      if (detected) {
+        setConfigs(prev => ({
+          ...prev,
+          AI_KEYS: value,
+          AI_PROVIDER: detected,
+          AI_MODEL: modelOptions[detected][0].value
+        }));
+        return;
+      }
+    }
+
+    setConfigs(prev => {
+      const newConfigs = { ...prev, [name]: value };
+      // Reset model if provider changes manually
+      if (name === "AI_PROVIDER") {
+        newConfigs.AI_MODEL = modelOptions[value][0].value;
+      }
+      return newConfigs;
+    });
   };
 
   const handleSaveConfigs = async () => {
@@ -620,39 +681,67 @@ const confirmDeleteUser = async () => {
                 </div>
 
                 <div className="space-y-6">
-                  {/* Gemini Keys */}
+                  {/* Unified Provider Selection */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
+                        <div className="bg-purple-100 text-purple-600 p-2 rounded-lg">
+                          <FaCog />
+                        </div>
+                        Select AI Provider
+                      </label>
+                      <select
+                        name="AI_PROVIDER"
+                        value={configs.AI_PROVIDER}
+                        onChange={handleConfigChange}
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-purple-500 transition-all outline-none text-sm font-semibold"
+                      >
+                        <option value="gemini">Google Gemini</option>
+                        <option value="groq">Groq AI</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="claude">Anthropic Claude</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
+                        <div className="bg-indigo-100 text-indigo-600 p-2 rounded-lg">
+                          <FaRocket />
+                        </div>
+                        Select AI Model
+                      </label>
+                      <select
+                        name="AI_MODEL"
+                        value={configs.AI_MODEL}
+                        onChange={handleConfigChange}
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none text-sm font-semibold"
+                      >
+                        {(modelOptions[configs.AI_PROVIDER] || []).map(opt => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Unified API Keys Input */}
                   <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
+                    <label className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
                       <div className="bg-blue-100 text-blue-600 p-2 rounded-lg">
                         <FaKey />
                       </div>
-                      Google Gemini API Keys
+                      Enter API Keys (separated by commas)
                     </label>
                     <textarea
-                      name="GEMINI_KEYS"
-                      value={configs.GEMINI_KEYS}
+                      name="AI_KEYS"
+                      value={configs.AI_KEYS}
                       onChange={handleConfigChange}
-                      rows="3"
+                      rows="4"
                       className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all outline-none text-sm font-mono"
-                      placeholder="key1, key2, key3..."
-                    />
-                  </div>
-
-                  {/* Groq Keys */}
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
-                      <div className="bg-pink-100 text-pink-600 p-2 rounded-lg">
-                        <FaKey />
-                      </div>
-                      Groq AI API Keys
-                    </label>
-                    <textarea
-                      name="GROQ_KEYS"
-                      value={configs.GROQ_KEYS}
-                      onChange={handleConfigChange}
-                      rows="3"
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-pink-100 focus:border-pink-500 transition-all outline-none text-sm font-mono"
-                      placeholder="key1, key2, key3..."
+                      placeholder={
+                        configs.AI_PROVIDER === "openai" ? "sk-..." : 
+                        configs.AI_PROVIDER === "groq" ? "gsk_..." : 
+                        configs.AI_PROVIDER === "claude" ? "sk-ant-..." : "key1, key2..."
+                      }
                     />
                   </div>
 
