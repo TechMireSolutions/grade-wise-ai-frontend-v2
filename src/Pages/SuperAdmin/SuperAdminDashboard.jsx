@@ -6,7 +6,7 @@ import Modal from "../../components/ui/Modal.jsx";
 import { getAllConfigs, bulkUpdateConfigs } from "../../api/config.api.js";
 import {
   FaUser,
-  FaUsers,
+  FaUsers,  
   FaCheckCircle,
   FaClock,
   FaArrowUp,
