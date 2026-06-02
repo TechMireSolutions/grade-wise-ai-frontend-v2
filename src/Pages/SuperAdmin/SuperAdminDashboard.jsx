@@ -4,13 +4,13 @@ import { Card, CardHeader, CardContent } from "../../components/ui/Card.jsx";
 import LoadingSpinner from "../../components/ui/LoadingSpinner.jsx";
 import Modal from "../../components/ui/Modal.jsx";
 import { getAllConfigs, bulkUpdateConfigs } from "../../api/config.api.js";
-import { 
-  FaUser, 
-  FaUsers, 
-  FaCheckCircle, 
-  FaClock, 
-  FaArrowUp, 
-  FaArrowDown, 
+import {
+  FaUser,
+  FaUsers,
+  FaCheckCircle,
+  FaClock,
+  FaArrowUp,
+  FaArrowDown,
   FaTrash,
   FaCrown,
   FaUserShield,
@@ -21,9 +21,10 @@ import {
   FaShieldAlt,
   FaKey,
   FaCog,
-  FaRocket,
   FaPlus,
   FaSave,
+  FaRobot,
+  FaCheck,
 } from "react-icons/fa";
 
 function SuperAdminDashboard() {
@@ -35,50 +36,20 @@ function SuperAdminDashboard() {
   const [actionLoading, setActionLoading] = useState(null);
   const [pendingDelete, setPendingDelete] = useState(null);
 
-  // Config State
+  // Config State - Refactored for Dynamic Models
   const [configs, setConfigs] = useState({
-    AI_PROVIDER: "gemini",
-    AI_KEYS: "",
-    AI_MODEL: "gemini-1.5-flash",
+    GEMINI_KEYS: "",
+    GROQ_KEYS: "",
+    OPENAI_KEYS: "",
   });
-
-  const modelOptions = {
-    gemini: [
-      { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
-      { value: "gemini-1.5-flash", label: "Gemini 1.5 Flash" },
-      { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro" },
-      { value: "gemini-pro", label: "Gemini Pro" },
-    ],
-    groq: [
-      { value: "llama3-8b-8192", label: "Llama 3 8B" },
-      { value: "llama3-70b-8192", label: "Llama 3 70B" },
-      { value: "mixtral-8x7b-32768", label: "Mixtral 8x7B" },
-      { value: "gemma-7b-it", label: "Gemma 7B" },
-    ],
-    openai: [
-      { value: "gpt-4o", label: "GPT-4o" },
-      { value: "gpt-4o-mini", label: "GPT-4o Mini" },
-      { value: "gpt-4-turbo", label: "GPT-4 Turbo" },
-      { value: "gpt-3.5-turbo", label: "GPT-3.5 Turbo" },
-    ],
-    claude: [
-      { value: "claude-3-5-sonnet-20240620", label: "Claude 3.5 Sonnet" },
-      { value: "claude-3-opus-20240229", label: "Claude 3 Opus" },
-      { value: "claude-3-sonnet-20240229", label: "Claude 3 Sonnet" },
-      { value: "claude-3-haiku-20240307", label: "Claude 3 Haiku" },
-    ]
-  };
-
-  const detectProvider = (key) => {
-    const k = key.split(',')[0].trim();
-    if (!k) return null;
-    if (k.startsWith("gsk_")) return "groq";
-    if (k.startsWith("sk-ant-")) return "claude";
-    if (k.startsWith("sk-")) return "openai";
-    if (k.startsWith("AIza") || k.startsWith("AQ.")) return "gemini";
-    return null;
-  };
+  const [selectedModel, setSelectedModel] = useState("GEMINI_KEYS");
   const [configLoading, setConfigLoading] = useState(false);
+
+  const SUPPORTED_MODELS = [
+    { id: "GEMINI_KEYS", name: "Google Gemini", icon: <FaRobot className="text-blue-500" />, placeholder: "Enter Gemini API keys separated by commas..." },
+    { id: "GROQ_KEYS", name: "Groq AI (Llama 3)", icon: <FaRobot className="text-pink-500" />, placeholder: "Enter Groq API keys separated by commas..." },
+    { id: "OPENAI_KEYS", name: "OpenAI (GPT-4/3.5)", icon: <FaRobot className="text-emerald-500" />, placeholder: "Enter OpenAI API keys separated by commas..." },
+  ];
 
   useEffect(() => {
     fetchUsers();
@@ -102,9 +73,9 @@ function SuperAdminDashboard() {
       const response = await getAllConfigs();
       if (response.success) {
         setConfigs({
-          AI_PROVIDER: response.configs.AI_PROVIDER || "gemini",
-          AI_KEYS: response.configs.AI_KEYS || "",
-          AI_MODEL: response.configs.AI_MODEL || "gemini-1.5-flash",
+          GEMINI_KEYS: response.configs.GEMINI_KEYS || "",
+          GROQ_KEYS: response.configs.GROQ_KEYS || "",
+          OPENAI_KEYS: response.configs.OPENAI_KEYS || "",
         });
       }
     } catch (error) {
@@ -114,35 +85,14 @@ function SuperAdminDashboard() {
 
   const handleConfigChange = (e) => {
     const { name, value } = e.target;
-    
-    if (name === "AI_KEYS") {
-      const detected = detectProvider(value);
-      if (detected) {
-        setConfigs(prev => ({
-          ...prev,
-          AI_KEYS: value,
-          AI_PROVIDER: detected,
-          AI_MODEL: modelOptions[detected][0].value
-        }));
-        return;
-      }
-    }
-
-    setConfigs(prev => {
-      const newConfigs = { ...prev, [name]: value };
-      // Reset model if provider changes manually
-      if (name === "AI_PROVIDER") {
-        newConfigs.AI_MODEL = modelOptions[value][0].value;
-      }
-      return newConfigs;
-    });
+    setConfigs(prev => ({ ...prev, [name]: value }));
   };
 
   const handleSaveConfigs = async () => {
     try {
       setConfigLoading(true);
       await bulkUpdateConfigs(configs);
-      showModal("success", "Settings Saved", "System configurations have been updated successfully.");
+      showModal("success", "Settings Saved", "System configurations have been updated successfully.");    
     } catch (error) {
       showModal("error", "Error", "Failed to save settings. Please try again.");
     } finally {
@@ -231,7 +181,7 @@ const confirmDeleteUser = async () => {
     }
   };
 
-  
+
 
   const filteredUsers = users.filter((u) => u.role !== "super_admin");
 
@@ -296,7 +246,7 @@ const confirmDeleteUser = async () => {
                 </p>
                 <div className="bg-yellow-500/20 backdrop-blur-sm border border-yellow-400/30 rounded-xl p-3 sm:p-4">
                   <div className="flex items-start gap-2 sm:gap-3">
-                    <FaShieldAlt className="text-yellow-300 text-lg sm:text-xl flex-shrink-0 mt-0.5" />
+                    <FaShieldAlt className="text-yellow-300 text-lg sm:text-xl flex-shrink-0 mt-0.5" />   
                     <div className="text-xs sm:text-sm">
                       <strong className="block mb-1">Role Permissions:</strong>
                       <span className="text-yellow-100">
@@ -323,8 +273,8 @@ const confirmDeleteUser = async () => {
           <button
             onClick={() => setActiveTab("users")}
             className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-md ${
-              activeTab === "users" 
-                ? "bg-purple-600 text-white translate-y-[-2px] shadow-purple-200" 
+              activeTab === "users"
+                ? "bg-purple-600 text-white translate-y-[-2px] shadow-purple-200"
                 : "bg-white text-gray-600 hover:bg-gray-50"
             }`}
           >
@@ -334,8 +284,8 @@ const confirmDeleteUser = async () => {
           <button
             onClick={() => setActiveTab("config")}
             className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-md ${
-              activeTab === "config" 
-                ? "bg-pink-600 text-white translate-y-[-2px] shadow-pink-200" 
+              activeTab === "config"
+                ? "bg-pink-600 text-white translate-y-[-2px] shadow-pink-200"
                 : "bg-white text-gray-600 hover:bg-gray-50"
             }`}
           >
@@ -349,8 +299,8 @@ const confirmDeleteUser = async () => {
             {/* Stats Cards - Enhanced */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 lg:gap-6 mb-8 sm:mb-10">
               {statsData.map((stat, index) => (
-                <Card 
-                  key={index} 
+                <Card
+                  key={index}
                   className={`border-2 ${stat.borderColor} hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1`}
                 >
                   <CardContent className="p-4 sm:p-6">
@@ -361,7 +311,7 @@ const confirmDeleteUser = async () => {
                       <div className={`text-2xl sm:text-3xl lg:text-4xl font-bold ${stat.color} mb-1 sm:mb-2`}>
                         {stat.value}
                       </div>
-                      <div className="text-gray-600 text-xs sm:text-sm font-medium">{stat.label}</div>
+                      <div className="text-gray-600 text-xs sm:text-sm font-medium">{stat.label}</div>    
                     </div>
                   </CardContent>
                 </Card>
@@ -371,8 +321,8 @@ const confirmDeleteUser = async () => {
             {/* Users Table Card - Enhanced */}
             <Card className="shadow-2xl border-2 border-gray-200 rounded-2xl overflow-hidden">
               <CardHeader className="bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 text-white border-b-2 border-purple-700">
-                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-                  <h2 className="text-lg sm:text-xl lg:text-2xl font-bold flex items-center gap-2">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">      
+                  <h2 className="text-lg sm:text-xl lg:text-2xl font-bold flex items-center gap-2">       
                     <FaUsers className="text-xl sm:text-2xl" />
                     Platform Users Management
                   </h2>
@@ -417,7 +367,7 @@ const confirmDeleteUser = async () => {
                                 Status
                               </div>
                             </th>
-                    
+
                             <th className="px-6 py-4 text-left text-xs font-bold text-gray-800 uppercase tracking-wider">
                               <div className="flex items-center gap-2">
                                 <FaCalendarAlt />
@@ -431,7 +381,7 @@ const confirmDeleteUser = async () => {
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
                           {filteredUsers.map((userData) => (
-                            <tr key={userData.id} className="hover:bg-purple-50/50 transition-colors">
+                            <tr key={userData.id} className="hover:bg-purple-50/50 transition-colors">    
                               <td className="px-6 py-4">
                                 <div className="flex items-center gap-3">
                                   <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-lg ${
@@ -451,21 +401,21 @@ const confirmDeleteUser = async () => {
                                 <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-full border ${getRoleBadgeColor(userData.role)}`}>
                                   {userData.role === 'admin' && <FaCrown className="text-xs" />}
                                   {userData.role === 'instructor' && <FaChalkboardTeacher className="text-xs" />}
-                                  {userData.role === 'student' && <FaUserGraduate className="text-xs" />}
+                                  {userData.role === 'student' && <FaUserGraduate className="text-xs" />} 
                                   {userData.role}
                                 </span>
                               </td>
                               <td className="px-6 py-4">
                                 <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full border ${
-                                  userData.verified 
-                                    ? "bg-green-100 text-green-800 border-green-200" 
+                                  userData.verified
+                                    ? "bg-green-100 text-green-800 border-green-200"
                                     : "bg-yellow-100 text-yellow-800 border-yellow-200"
                                 }`}>
                                   {userData.verified ? <FaCheckCircle /> : <FaClock />}
                                   {userData.verified ? "Verified" : "Pending"}
                                 </span>
                               </td>
-                      
+
                               <td className="px-6 py-4">
                                 <div className="flex items-center gap-2 text-sm text-gray-600">
                                   <FaCalendarAlt className="text-gray-400" />
@@ -479,19 +429,19 @@ const confirmDeleteUser = async () => {
                                       <button
                                         onClick={() => handleRoleChange(userData.id, "admin", userData.name, userData.email)}
                                         disabled={actionLoading === `role-${userData.id}`}
-                                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50"
+                                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50"      
                                       >
                                         {actionLoading === `role-${userData.id}` ? <LoadingSpinner size="sm" /> : <><FaArrowUp /> Admin</>}
                                       </button>
                                       <button
                                         onClick={() => handleRoleChange(userData.id, "instructor", userData.name, userData.email)}
                                         disabled={actionLoading === `role-${userData.id}`}
-                                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50"
+                                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50"   
                                       >
                                         {actionLoading === `role-${userData.id}` ? <LoadingSpinner size="sm" /> : <><FaArrowUp /> Instructor</>}
                                       </button>
                                       <button
-                                        onClick={() => handleDeleteUser(userData.id, userData.name)}
+                                        onClick={() => handleDeleteUser(userData.id, userData.name)}      
                                         disabled={actionLoading === `delete-${userData.id}`}
                                         className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 border border-red-200"
                                       >
@@ -509,9 +459,9 @@ const confirmDeleteUser = async () => {
                                         {actionLoading === `role-${userData.id}` ? <LoadingSpinner size="sm" /> : <><FaArrowDown /> Demote</>}
                                       </button>
                                       <button
-                                        onClick={() => handleDeleteUser(userData.id, userData.name)}
+                                        onClick={() => handleDeleteUser(userData.id, userData.name)}      
                                         disabled={actionLoading === `delete-${userData.id}`}
-                                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50"
+                                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50"      
                                       >
                                         {actionLoading === `delete-${userData.id}` ? <LoadingSpinner size="sm" /> : <><FaTrash /> Delete</>}
                                       </button>
@@ -527,7 +477,7 @@ const confirmDeleteUser = async () => {
                                         {actionLoading === `role-${userData.id}` ? <LoadingSpinner size="sm" /> : <><FaArrowDown /> Demote</>}
                                       </button>
                                       <button
-                                        onClick={() => handleDeleteUser(userData.id, userData.name)}
+                                        onClick={() => handleDeleteUser(userData.id, userData.name)}      
                                         disabled={actionLoading === `delete-${userData.id}`}
                                         className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 border border-red-200"
                                       >
@@ -550,7 +500,7 @@ const confirmDeleteUser = async () => {
                           <CardContent className="p-4 sm:p-5">
                             <div className="flex items-start gap-3 mb-4">
                               <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center text-white font-bold text-lg sm:text-xl shadow-lg ${
-                                userData.role === 'admin' ? 'bg-gradient-to-br from-red-500 to-red-600' :
+                                userData.role === 'admin' ? 'bg-gradient-to-br from-red-500 to-red-600' : 
                                 userData.role === 'instructor' ? 'bg-gradient-to-br from-blue-500 to-blue-600' :
                                 'bg-gradient-to-br from-green-500 to-green-600'
                               }`}>
@@ -561,14 +511,14 @@ const confirmDeleteUser = async () => {
                                 <p className="text-xs sm:text-sm text-gray-500 truncate mb-2">{userData.email}</p>
                                 <div className="flex flex-wrap gap-2">
                                   <span className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-full border ${getRoleBadgeColor(userData.role)}`}>
-                                    {userData.role === 'admin' && <FaCrown className="text-xs" />}
+                                    {userData.role === 'admin' && <FaCrown className="text-xs" />}        
                                     {userData.role === 'instructor' && <FaChalkboardTeacher className="text-xs" />}
                                     {userData.role === 'student' && <FaUserGraduate className="text-xs" />}
                                     {userData.role}
                                   </span>
                                   <span className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full border ${
-                                    userData.verified 
-                                      ? "bg-green-100 text-green-800 border-green-200" 
+                                    userData.verified
+                                      ? "bg-green-100 text-green-800 border-green-200"
                                       : "bg-yellow-100 text-yellow-800 border-yellow-200"
                                   }`}>
                                     {userData.verified ? <FaCheckCircle /> : <FaClock />}
@@ -665,93 +615,96 @@ const confirmDeleteUser = async () => {
             <CardHeader className="bg-gradient-to-r from-pink-600 to-purple-600 text-white border-b-2 border-pink-700">
               <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
                 <FaKey className="text-2xl" />
-                System API Key Management
+                System AI Key Management
               </h2>
             </CardHeader>
             <CardContent className="p-6 sm:p-8 lg:p-10">
               <div className="max-w-4xl space-y-8">
+                {/* Info Box */}
                 <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-xl">
                   <div className="flex items-center gap-3">
                     <FaCog className="text-blue-500 animate-spin-slow" />
                     <div>
-                      <h4 className="font-bold text-blue-800">API Key Configuration</h4>
-                      <p className="text-sm text-blue-700">Add multiple keys separated by commas for load balancing and redundancy.</p>
+                      <h4 className="font-bold text-blue-800">Dynamic AI Provider Configuration</h4>      
+                      <p className="text-sm text-blue-700">Select an AI model and add its API keys. Multiple keys are automatically load-balanced by the system.</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-6">
-                  {/* Unified Provider Selection */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
-                        <div className="bg-purple-100 text-purple-600 p-2 rounded-lg">
-                          <FaCog />
-                        </div>
-                        Select AI Provider
-                      </label>
-                      <select
-                        name="AI_PROVIDER"
-                        value={configs.AI_PROVIDER}
-                        onChange={handleConfigChange}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-purple-500 transition-all outline-none text-sm font-semibold"
-                      >
-                        <option value="gemini">Google Gemini</option>
-                        <option value="groq">Groq AI</option>
-                        <option value="openai">OpenAI</option>
-                        <option value="claude">Anthropic Claude</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
-                        <div className="bg-indigo-100 text-indigo-600 p-2 rounded-lg">
-                          <FaRocket />
-                        </div>
-                        Select AI Model
-                      </label>
-                      <select
-                        name="AI_MODEL"
-                        value={configs.AI_MODEL}
-                        onChange={handleConfigChange}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none text-sm font-semibold"
-                      >
-                        {(modelOptions[configs.AI_PROVIDER] || []).map(opt => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  {/* Model Selection Dropdown */}
+                  <div className="lg:col-span-1 space-y-4">
+                    <label className="block text-sm font-bold text-gray-700 mb-2">Select AI Model</label> 
+                    <div className="space-y-2">
+                      {SUPPORTED_MODELS.map((model) => (
+                        <button
+                          key={model.id}
+                          onClick={() => setSelectedModel(model.id)}
+                          className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all font-semibold ${
+                            selectedModel === model.id
+                              ? "border-pink-500 bg-pink-50 text-pink-700 shadow-md"
+                              : "border-gray-100 hover:border-gray-200 text-gray-600"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            {model.icon}
+                            {model.name}
+                          </div>
+                          {selectedModel === model.id && <FaCheck className="text-pink-500" />}
+                        </button>
+                      ))}
                     </div>
                   </div>
 
-                  {/* Unified API Keys Input */}
-                  <div>
-                    <label className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
-                      <div className="bg-blue-100 text-blue-600 p-2 rounded-lg">
-                        <FaKey />
+                  {/* Key Management Area */}
+                  <div className="lg:col-span-2 space-y-6 bg-gray-50/50 p-6 rounded-2xl border-2 border-dashed border-gray-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="font-bold text-gray-800 flex items-center gap-2 text-lg">
+                        {SUPPORTED_MODELS.find(m => m.id === selectedModel)?.icon}
+                        Configure {SUPPORTED_MODELS.find(m => m.id === selectedModel)?.name}
+                      </h3>
+                      <span className="text-xs bg-white px-3 py-1 rounded-full border border-gray-200 text-gray-500 font-mono">
+                        {selectedModel}
+                      </span>
+                    </div>
+
+                    <div className="space-y-4">
+                      <p className="text-xs text-gray-500 italic">
+                        Tip: You can add multiple keys separated by commas (e.g., key1, key2, key3).      
+                      </p>
+                      <textarea
+                        name={selectedModel}
+                        value={configs[selectedModel] || ""}
+                        onChange={handleConfigChange}
+                        rows="6"
+                        className="w-full px-4 py-4 border-2 border-white bg-white rounded-xl focus:ring-4 focus:ring-pink-100 focus:border-pink-500 transition-all shadow-sm outline-none text-sm font-mono leading-relaxed"
+                        placeholder={SUPPORTED_MODELS.find(m => m.id === selectedModel)?.placeholder}     
+                      />
+                    </div>
+
+                    <div className="flex justify-end">
+                      <button
+                        onClick={handleSaveConfigs}
+                        disabled={configLoading}
+                        className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-pink-600 to-purple-600 text-white rounded-xl font-bold shadow-lg hover:shadow-pink-200 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+                      >
+                        {configLoading ? <LoadingSpinner size="sm" color="white" /> : <><FaSave /> Save {SUPPORTED_MODELS.find(m => m.id === selectedModel)?.name} Configuration</>}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Summary View */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-6 border-t border-gray-100">     
+                  {SUPPORTED_MODELS.map(model => (
+                    <div key={model.id} className="bg-white p-4 rounded-xl border border-gray-100 flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-sm font-bold text-gray-700">
+                        {model.icon}
+                        {model.name}
                       </div>
-                      Enter API Keys (separated by commas)
-                    </label>
-                    <textarea
-                      name="AI_KEYS"
-                      value={configs.AI_KEYS}
-                      onChange={handleConfigChange}
-                      rows="4"
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all outline-none text-sm font-mono"
-                      placeholder={
-                        configs.AI_PROVIDER === "openai" ? "sk-..." : 
-                        configs.AI_PROVIDER === "groq" ? "gsk_..." : 
-                        configs.AI_PROVIDER === "claude" ? "sk-ant-..." : "key1, key2..."
-                      }
-                    />
-                  </div>
-
-                  <button
-                    onClick={handleSaveConfigs}
-                    disabled={configLoading}
-                    className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-pink-600 to-purple-600 text-white rounded-xl font-bold shadow-lg hover:shadow-pink-200 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
-                  >
-                    {configLoading ? <LoadingSpinner size="sm" /> : <><FaSave /> Save System Configuration</>}
-                  </button>
+                      <div className={`w-3 h-3 rounded-full ${configs[model.id] ? 'bg-green-500' : 'bg-gray-200'}`} title={configs[model.id] ? 'Configured' : 'Not Configured'} />
+                    </div>
+                  ))}
                 </div>
               </div>
             </CardContent>
