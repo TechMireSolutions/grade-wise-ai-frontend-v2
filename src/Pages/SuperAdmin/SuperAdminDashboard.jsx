@@ -21,6 +21,7 @@ import {
   FaShieldAlt,
   FaKey,
   FaCog,
+  FaRocket,
   FaPlus,
   FaSave,
   FaRobot,
@@ -692,6 +693,47 @@ const confirmDeleteUser = async () => {
                       </button>
                     </div>
                   </div>
+                </div>
+
+                {/* Summary View */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-6 border-t border-gray-100">     
+                  {SUPPORTED_MODELS.map(model => (
+                    <div key={model.id} className="bg-white p-4 rounded-xl border border-gray-100 flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-sm font-bold text-gray-700">
+                        {model.icon}
+                        {model.name}
+                      </div>
+                      <div className={`w-3 h-3 rounded-full ${configs[model.id] ? 'bg-green-500' : 'bg-gray-200'}`} title={configs[model.id] ? 'Configured' : 'Not Configured'} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+<Modal
+  isOpen={modal.isOpen}
+  onClose={() => {
+    setModal({ ...modal, isOpen: false });
+    setPendingDelete(null);
+  }}
+  onConfirm={pendingDelete ? confirmDeleteUser : undefined}
+  type={modal.type}
+  title={modal.title}
+  loading={pendingDelete && actionLoading === `delete-${pendingDelete.userId}`}
+  confirmText="Delete User"
+>
+  {modal.message}
+</Modal>
+
+    </div>
+  );
+}
+
+export default SuperAdminDashboard;
+        </div>
                 </div>
 
                 {/* Summary View */}
