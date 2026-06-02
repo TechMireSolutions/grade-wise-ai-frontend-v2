@@ -23,6 +23,8 @@ import {
   FaCog,
   FaPlus,
   FaSave,
+  FaRobot,
+  FaCheck,
 } from "react-icons/fa";
 
 function SuperAdminDashboard() {
@@ -34,12 +36,20 @@ function SuperAdminDashboard() {
   const [actionLoading, setActionLoading] = useState(null);
   const [pendingDelete, setPendingDelete] = useState(null);
 
-  // Config State
+  // Config State - Refactored for Dynamic Models
   const [configs, setConfigs] = useState({
     GEMINI_KEYS: "",
     GROQ_KEYS: "",
+    OPENAI_KEYS: "",
   });
+  const [selectedModel, setSelectedModel] = useState("GEMINI_KEYS");
   const [configLoading, setConfigLoading] = useState(false);
+
+  const SUPPORTED_MODELS = [
+    { id: "GEMINI_KEYS", name: "Google Gemini", icon: <FaRobot className="text-blue-500" />, placeholder: "Enter Gemini API keys separated by commas..." },
+    { id: "GROQ_KEYS", name: "Groq AI (Llama 3)", icon: <FaRobot className="text-pink-500" />, placeholder: "Enter Groq API keys separated by commas..." },
+    { id: "OPENAI_KEYS", name: "OpenAI (GPT-4/3.5)", icon: <FaRobot className="text-emerald-500" />, placeholder: "Enter OpenAI API keys separated by commas..." },
+  ];
 
   useEffect(() => {
     fetchUsers();
@@ -65,6 +75,7 @@ function SuperAdminDashboard() {
         setConfigs({
           GEMINI_KEYS: response.configs.GEMINI_KEYS || "",
           GROQ_KEYS: response.configs.GROQ_KEYS || "",
+          OPENAI_KEYS: response.configs.OPENAI_KEYS || "",
         });
       }
     } catch (error) {
@@ -604,65 +615,96 @@ const confirmDeleteUser = async () => {
             <CardHeader className="bg-gradient-to-r from-pink-600 to-purple-600 text-white border-b-2 border-pink-700">
               <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
                 <FaKey className="text-2xl" />
-                System API Key Management
+                System AI Key Management
               </h2>
             </CardHeader>
             <CardContent className="p-6 sm:p-8 lg:p-10">
               <div className="max-w-4xl space-y-8">
+                {/* Info Box */}
                 <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-xl">
                   <div className="flex items-center gap-3">
                     <FaCog className="text-blue-500 animate-spin-slow" />
                     <div>
-                      <h4 className="font-bold text-blue-800">API Key Configuration</h4>
-                      <p className="text-sm text-blue-700">Add multiple keys separated by commas for load balancing and redundancy.</p>
+                      <h4 className="font-bold text-blue-800">Dynamic AI Provider Configuration</h4>
+                      <p className="text-sm text-blue-700">Select an AI model and add its API keys. Multiple keys are automatically load-balanced by the system.</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-6">
-                  {/* Gemini Keys */}
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
-                      <div className="bg-blue-100 text-blue-600 p-2 rounded-lg">
-                        <FaKey />
-                      </div>
-                      Google Gemini API Keys
-                    </label>
-                    <textarea
-                      name="GEMINI_KEYS"
-                      value={configs.GEMINI_KEYS}
-                      onChange={handleConfigChange}
-                      rows="3"
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all outline-none text-sm font-mono"
-                      placeholder="key1, key2, key3..."
-                    />
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  {/* Model Selection Dropdown */}
+                  <div className="lg:col-span-1 space-y-4">
+                    <label className="block text-sm font-bold text-gray-700 mb-2">Select AI Model</label>
+                    <div className="space-y-2">
+                      {SUPPORTED_MODELS.map((model) => (
+                        <button
+                          key={model.id}
+                          onClick={() => setSelectedModel(model.id)}
+                          className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all font-semibold ${
+                            selectedModel === model.id
+                              ? "border-pink-500 bg-pink-50 text-pink-700 shadow-md"
+                              : "border-gray-100 hover:border-gray-200 text-gray-600"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            {model.icon}
+                            {model.name}
+                          </div>
+                          {selectedModel === model.id && <FaCheck className="text-pink-500" />}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
-                  {/* Groq Keys */}
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
-                      <div className="bg-pink-100 text-pink-600 p-2 rounded-lg">
-                        <FaKey />
-                      </div>
-                      Groq AI API Keys
-                    </label>
-                    <textarea
-                      name="GROQ_KEYS"
-                      value={configs.GROQ_KEYS}
-                      onChange={handleConfigChange}
-                      rows="3"
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-pink-100 focus:border-pink-500 transition-all outline-none text-sm font-mono"
-                      placeholder="key1, key2, key3..."
-                    />
-                  </div>
+                  {/* Key Management Area */}
+                  <div className="lg:col-span-2 space-y-6 bg-gray-50/50 p-6 rounded-2xl border-2 border-dashed border-gray-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="font-bold text-gray-800 flex items-center gap-2 text-lg">
+                        {SUPPORTED_MODELS.find(m => m.id === selectedModel)?.icon}
+                        Configure {SUPPORTED_MODELS.find(m => m.id === selectedModel)?.name}
+                      </h3>
+                      <span className="text-xs bg-white px-3 py-1 rounded-full border border-gray-200 text-gray-500 font-mono">
+                        {selectedModel}
+                      </span>
+                    </div>
 
-                  <button
-                    onClick={handleSaveConfigs}
-                    disabled={configLoading}
-                    className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-pink-600 to-purple-600 text-white rounded-xl font-bold shadow-lg hover:shadow-pink-200 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
-                  >
-                    {configLoading ? <LoadingSpinner size="sm" /> : <><FaSave /> Save System Configuration</>}
-                  </button>
+                    <div className="space-y-4">
+                      <p className="text-xs text-gray-500 italic">
+                        Tip: You can add multiple keys separated by commas (e.g., key1, key2, key3).
+                      </p>
+                      <textarea
+                        name={selectedModel}
+                        value={configs[selectedModel] || ""}
+                        onChange={handleConfigChange}
+                        rows="6"
+                        className="w-full px-4 py-4 border-2 border-white bg-white rounded-xl focus:ring-4 focus:ring-pink-100 focus:border-pink-500 transition-all shadow-sm outline-none text-sm font-mono leading-relaxed"
+                        placeholder={SUPPORTED_MODELS.find(m => m.id === selectedModel)?.placeholder}
+                      />
+                    </div>
+
+                    <div className="flex justify-end">
+                      <button
+                        onClick={handleSaveConfigs}
+                        disabled={configLoading}
+                        className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-pink-600 to-purple-600 text-white rounded-xl font-bold shadow-lg hover:shadow-pink-200 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+                      >
+                        {configLoading ? <LoadingSpinner size="sm" color="white" /> : <><FaSave /> Save {SUPPORTED_MODELS.find(m => m.id === selectedModel)?.name} Configuration</>}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Summary View */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-6 border-t border-gray-100">
+                  {SUPPORTED_MODELS.map(model => (
+                    <div key={model.id} className="bg-white p-4 rounded-xl border border-gray-100 flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-sm font-bold text-gray-700">
+                        {model.icon}
+                        {model.name}
+                      </div>
+                      <div className={`w-3 h-3 rounded-full ${configs[model.id] ? 'bg-green-500' : 'bg-gray-200'}`} title={configs[model.id] ? 'Configured' : 'Not Configured'} />
+                    </div>
+                  ))}
                 </div>
               </div>
             </CardContent>
