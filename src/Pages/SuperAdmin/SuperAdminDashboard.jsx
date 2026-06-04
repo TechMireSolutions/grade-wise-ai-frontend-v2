@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import useAuthStore from "../../store/authStore.js";
 import { Card, CardHeader, CardContent } from "../../components/ui/Card.jsx";
 import LoadingSpinner from "../../components/ui/LoadingSpinner.jsx";
@@ -284,9 +285,14 @@ function SuperAdminDashboard() {
               <CardHeader className="bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 text-white border-b-2 border-purple-700">
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                   <h2 className="text-lg sm:text-xl lg:text-2xl font-bold flex items-center gap-2"><FaUsers className="text-xl sm:text-2xl" /> Platform Users Management</h2>
-                  <button onClick={fetchUsers} className="inline-flex items-center gap-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl transition-all duration-300 font-semibold text-sm sm:text-base shadow-lg hover:shadow-xl">
-                    <FaSync className="animate-spin-on-hover" /> Refresh
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <Link to="/instructor/students" className="inline-flex items-center gap-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl transition-all duration-300 font-semibold text-sm sm:text-base shadow-lg hover:shadow-xl">
+                      <FaPlus /> Add User
+                    </Link>
+                    <button onClick={fetchUsers} className="inline-flex items-center gap-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl transition-all duration-300 font-semibold text-sm sm:text-base shadow-lg hover:shadow-xl">
+                      <FaSync className="animate-spin-on-hover" /> Refresh
+                    </button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="p-0">
@@ -320,8 +326,41 @@ function SuperAdminDashboard() {
                             <td className="px-6 py-4"><span className={`px-3 py-1.5 text-xs font-semibold rounded-full ${userData.verified ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"}`}>{userData.verified ? "Verified" : "Pending"}</span></td>
                             <td className="px-6 py-4 text-sm text-gray-600">{new Date(userData.created_at).toLocaleDateString()}</td>
                             <td className="px-6 py-4">
-                              <div className="flex gap-2">
-                                <button onClick={() => handleDeleteUser(userData.id, userData.name)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg"><FaTrash /></button>
+                              <div className="flex flex-wrap gap-2">
+                                {userData.role !== "admin" && (
+                                  <button
+                                    onClick={() => handleRoleChange(userData.id, "admin", userData.name, userData.email)}
+                                    disabled={actionLoading === `role-${userData.id}`}
+                                    className="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 hover:bg-red-200 rounded-lg text-[10px] font-bold transition-colors disabled:opacity-50"
+                                  >
+                                    {actionLoading === `role-${userData.id}` ? "..." : "→ Admin"}
+                                  </button>
+                                )}
+                                {userData.role !== "instructor" && (
+                                  <button
+                                    onClick={() => handleRoleChange(userData.id, "instructor", userData.name, userData.email)}
+                                    disabled={actionLoading === `role-${userData.id}`}
+                                    className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-lg text-[10px] font-bold transition-colors disabled:opacity-50"
+                                  >
+                                    {actionLoading === `role-${userData.id}` ? "..." : "→ Inst."}
+                                  </button>
+                                )}
+                                {userData.role !== "student" && (
+                                  <button
+                                    onClick={() => handleRoleChange(userData.id, "student", userData.name, userData.email)}
+                                    disabled={actionLoading === `role-${userData.id}`}
+                                    className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 hover:bg-green-200 rounded-lg text-[10px] font-bold transition-colors disabled:opacity-50"
+                                  >
+                                    {actionLoading === `role-${userData.id}` ? "..." : "→ Stud."}
+                                  </button>
+                                )}
+                                <button 
+                                  onClick={() => handleDeleteUser(userData.id, userData.name)} 
+                                  className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                  title="Delete User"
+                                >
+                                  <FaTrash />
+                                </button>
                               </div>
                             </td>
                           </tr>

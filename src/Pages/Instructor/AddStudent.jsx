@@ -4,18 +4,17 @@ import useAssessmentStore from "../../store/assessmentStore.js";
 import useAuthStore from "../../store/authStore.js";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import Modal from "../../components/ui/Modal";
-import { FaUser, FaEnvelope, FaLock, FaUserPlus, FaArrowLeft, FaUserGraduate } from "react-icons/fa";
+import { FaUser, FaEnvelope, FaLock, FaUserPlus, FaArrowLeft, FaUserGraduate, FaUserShield } from "react-icons/fa";
 import {
   registerStudentSchema,
   enrollStudentSchema,
 } from "../../scheema/studentSchemas.js";
-import { email } from "zod";
 
 
-function AddStudent({ assessmentId, onStudentAdded, compact = false }) {
+function AddUser({ assessmentId, onStudentAdded, compact = false }) {
   const navigate = useNavigate();
   const { enrollStudent, loading: enrollLoading } = useAssessmentStore();
-  const { registerStudent } = useAuthStore();
+  const { registerStudent, user: currentUser } = useAuthStore();
 
   const [mode, setMode] = useState(assessmentId ? "enroll" : "register");
   const [formData, setFormData] = useState({
@@ -23,6 +22,7 @@ function AddStudent({ assessmentId, onStudentAdded, compact = false }) {
     email: "",
     password: "",
     confirmPassword: "",
+    role: "student",
   });
   
   const [isLoading, setIsLoading] = useState(false);
@@ -38,7 +38,13 @@ function AddStudent({ assessmentId, onStudentAdded, compact = false }) {
     if (type === "success" && redirect) {
       setTimeout(() => {
         setModal({ isOpen: false });
-        navigate("/instructor/dashboard");
+        if (currentUser?.role === 'super_admin') {
+          navigate("/super-admin/dashboard");
+        } else if (currentUser?.role === 'admin') {
+          navigate("/admin/dashboard");
+        } else {
+          navigate("/instructor/dashboard");
+        }
       }, 1500);
     }
   };
@@ -49,21 +55,22 @@ function AddStudent({ assessmentId, onStudentAdded, compact = false }) {
       email: "",
       password: "",
       confirmPassword: "",
+      role: "student",
     });
   };
 
   const handleRegister = async (e) => {
     e.preventDefault();
-try {
-  registerStudentSchema.parse(formData);
-} catch (err) {
-  showModal(
-    "error",
-    "Invalid Input",
-    err.errors?.[0]?.message || "Invalid form data"
-  );
-  return;
-}
+    try {
+      registerStudentSchema.parse(formData);
+    } catch (err) {
+      showModal(
+        "error",
+        "Invalid Input",
+        err.errors?.[0]?.message || "Invalid form data"
+      );
+      return;
+    }
 
     setIsLoading(true);
     try {
@@ -71,16 +78,17 @@ try {
         name: formData.name.trim(),
         email: formData.email.trim(),
         password: formData.password,
+        role: formData.role,
       });
 
       if (assessmentId) {
         await enrollStudent(assessmentId, formData.email.trim());
         onStudentAdded?.();
         resetForm();
-        showModal("success", "Success", "Student registered and enrolled successfully!");
+        showModal("success", "Success", "User registered and enrolled successfully!");
       } else {
         resetForm();
-        showModal("success", "Success", "Student registered successfully!", true);
+        showModal("success", "Success", "User registered successfully!", true);
       }
     } catch (err) {
       showModal("error", "Error", err.message || "Registration failed");
@@ -105,8 +113,7 @@ const handleEnroll = async (e) => {
 
   try {
     await enrollStudent(assessmentId, formData.email.trim());
-    console.log(email)
-    showModal("success", "Success", "Student enrolled successfully!");
+    showModal("success", "Success", "User enrolled successfully!");
     setFormData((prev) => ({ ...prev, email: "" }));
     onStudentAdded?.();
   } catch (err) {
@@ -148,10 +155,32 @@ const handleEnroll = async (e) => {
             onChange={handleChange}
             required
             className={inputClass}
-            placeholder="student@example.com"
+            placeholder="user@example.com"
           />
         </div>
       </div>
+
+      {!assessmentId && (
+        <div>
+          <label className={labelClass}>User Role</label>
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <FaUserShield className="text-gray-400" />
+            </div>
+            <select
+              name="role"
+              value={formData.role}
+              onChange={handleChange}
+              className={`${inputClass} appearance-none`}
+            >
+              <option value="student">Student</option>
+              <option value="instructor">Instructor</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+        </div>
+      )}
+
       <div>
         <label className={labelClass}>Password</label>
         <div className="relative">
@@ -208,7 +237,7 @@ const handleEnroll = async (e) => {
           ) : (
             <>
               <FaUserPlus />
-              <span>Register Student</span>
+              <span>Register User</span>
             </>
           )}
         </button>
@@ -217,7 +246,7 @@ const handleEnroll = async (e) => {
   ) : (
     <form onSubmit={handleEnroll} className={compact ? "space-y-4" : "space-y-5"}>
       <div>
-        <label className={labelClass}>Student Email</label>
+        <label className={labelClass}>User Email</label>
         <div className="relative">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <FaEnvelope className="text-gray-400" />
@@ -229,7 +258,7 @@ const handleEnroll = async (e) => {
             onChange={handleChange}
             required
             className={inputClass}
-            placeholder="student@example.com"
+            placeholder="user@example.com"
           />
         </div>
       </div>
@@ -255,7 +284,7 @@ const handleEnroll = async (e) => {
           ) : (
             <>
               <FaUserGraduate />
-              <span>Enroll Student</span>
+              <span>Enroll User</span>
             </>
           )}
         </button>
@@ -269,8 +298,8 @@ const handleEnroll = async (e) => {
       <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/30">
         <div className="max-w-2xl mx-auto px-4 py-8 sm:py-12">
           <div className="mb-8">
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Add New Student</h1>
-            <p className="text-gray-600 text-sm sm:text-base">Register a new student or enroll an existing one</p>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Add New User</h1>
+            <p className="text-gray-600 text-sm sm:text-base">Register a new user or enroll an existing one</p>
           </div>
           <div className="bg-white rounded-2xl shadow-2xl border-2 border-gray-200 p-6 sm:p-8">
             {formContent}
@@ -297,7 +326,7 @@ const handleEnroll = async (e) => {
             onClick={() => setMode((m) => (m === "enroll" ? "register" : "enroll"))}
             className="text-xs text-blue-600 hover:text-blue-700 font-semibold hover:underline transition-colors"
           >
-            {mode === "enroll" ? "→ Register new student instead" : "→ Enroll existing instead"}
+            {mode === "enroll" ? "→ Register new user instead" : "→ Enroll existing instead"}
           </button>
         </div>
       )}
@@ -314,4 +343,4 @@ const handleEnroll = async (e) => {
   );
 }
 
-export default AddStudent;
+export default AddUser;
