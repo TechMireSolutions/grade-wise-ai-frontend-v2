@@ -15,23 +15,33 @@ export const bulkUpdateConfigs = async (configs) => {
   return response.data;
 };
 
-export const listAiKeys = async (purpose) => {
-  const response = await apiClient.get(`/config/ai-keys?purpose=${encodeURIComponent(purpose)}`);
+export const listAiKeys = async (purpose, provider) => {
+  const response = await apiClient.get(`/config/ai-keys?purpose=${encodeURIComponent(purpose)}&provider=${encodeURIComponent(provider)}`);
   return response.data;
 };
 
-export const addAiKeys = async (purpose, keys) => {
-  const response = await apiClient.post("/config/ai-keys/add", { purpose, keys });
+export const getAiSummary = async () => {
+  const response = await apiClient.get("/config/ai-summary");
   return response.data;
 };
 
-export const deleteAiKey = async (purpose, index) => {
-  const response = await apiClient.delete("/config/ai-keys", { data: { purpose, index } });
+export const addAiKeys = async (purpose, provider, keys, model) => {
+  const response = await apiClient.post("/config/ai-keys/add", { purpose, provider, keys, model });
   return response.data;
 };
 
-export const testStoredAiKey = async (purpose, index) => {
-  const response = await apiClient.post("/config/ai-keys/test", { purpose, index });
+export const setProviderModel = async (purpose, provider, model) => {
+  const response = await apiClient.post("/config/ai-keys/model", { purpose, provider, model });
+  return response.data;
+};
+
+export const deleteAiKey = async (purpose, provider, index) => {
+  const response = await apiClient.delete("/config/ai-keys", { data: { purpose, provider, index } });
+  return response.data;
+};
+
+export const testStoredAiKey = async (purpose, provider, index) => {
+  const response = await apiClient.post("/config/ai-keys/test", { purpose, provider, index });
   return response.data;
 };
 

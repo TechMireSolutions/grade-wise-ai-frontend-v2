@@ -8,7 +8,9 @@ import {
   getAllConfigs,
   bulkUpdateConfigs,
   listAiKeys,
+  getAiSummary,
   addAiKeys as apiAddAiKeys,
+  setProviderModel as apiSetProviderModel,
   deleteAiKey as apiDeleteAiKey,
   testStoredAiKey,
   testInlineAiKey,
@@ -90,22 +92,34 @@ function SuperAdminDashboard() {
   const [actionLoading, setActionLoading] = useState(null);
   const [pendingDelete, setPendingDelete] = useState(null);
 
-  // Config State — split by purpose (PDF reading vs. text generation).
-  // `keysDirty` tracks whether the user actually typed a new key; if false on save,
-  // we skip the keys field so the masked value never overwrites the real keys in DB.
-  const blankPurpose = (defaultProvider, defaultModel) => ({
-    provider: defaultProvider,
-    model: defaultModel,
-    keys: "",
-    keysDirty: false,
-  });
-  const [pdfConfig, setPdfConfig] = useState(blankPurpose("gemini", "gemini-1.5-flash"));
-  const [textConfig, setTextConfig] = useState(blankPurpose("gemini", "gemini-1.5-flash"));
+  // ── AI Configuration State — per (purpose × provider) ──────────────────
+  // Six providers per purpose, each with its OWN model + keys + table.
+  const ALL_PROVIDERS = ["gemini", "groq", "openai", "claude", "mistral", "deepseek"];
+  const defaultModelMap = {
+    gemini:   "gemini-2.0-flash",
+    groq:     "llama-3.3-70b-versatile",
+    openai:   "gpt-4o-mini",
+    claude:   "claude-3-5-sonnet-20241022",
+    mistral:  "mistral-large-latest",
+    deepseek: "deepseek-chat",
+  };
+  const buildInitialState = () => {
+    const perProvider = () => Object.fromEntries(
+      ALL_PROVIDERS.map(p => [p, {
+        model: defaultModelMap[p],
+        newKeys: "",
+        keysDirty: false,
+        list: [],         // [{ index, snippet }]
+        testStatus: {},   // { [index]: {state, message, latencyMs} }
+      }])
+    );
+    return { pdf: perProvider(), text: perProvider() };
+  };
+  const [aiState, setAiState] = useState(buildInitialState);
   const [configSubTab, setConfigSubTab] = useState("pdf"); // "pdf" | "text"
-  // Per-purpose list of stored keys with masked snippet & test status
-  const [keyLists, setKeyLists] = useState({ pdf: [], text: [] });
-  const [keyTestStatus, setKeyTestStatus] = useState({}); // { 'pdf-0': {state, message, latencyMs} }
-  const [pendingKeyDelete, setPendingKeyDelete] = useState(null); // { purpose, index, snippet }
+  const [activeProvider, setActiveProvider] = useState({ pdf: "gemini", text: "gemini" });
+  const [pendingKeyDelete, setPendingKeyDelete] = useState(null); // { purpose, provider, index, snippet }
+  const [inlineTestStatus, setInlineTestStatus] = useState({}); // { 'pdf-gemini': {...} }
 
   // Comprehensive model catalog. Keep newest at the top of each list so the
   // default (first item) is always the current flagship.
@@ -200,67 +214,142 @@ function SuperAdminDashboard() {
   useEffect(() => {
     fetchUsers();
     fetchConfigs();
-    refreshKeyList("pdf");
-    refreshKeyList("text");
+    refreshAllKeyLists();
   }, []);
 
-  const refreshKeyList = async (purpose) => {
+  // Helper: immutably patch aiState[purpose][provider]
+  const patchPP = (purpose, provider, patch) =>
+    setAiState(prev => ({
+      ...prev,
+      [purpose]: {
+        ...prev[purpose],
+        [provider]: { ...prev[purpose][provider], ...patch },
+      },
+    }));
+
+  const refreshAllKeyLists = async () => {
     try {
-      const resp = await listAiKeys(purpose);
-      if (resp.success) {
-        setKeyLists(prev => ({ ...prev, [purpose]: resp.keys || [] }));
+      const summary = await getAiSummary();
+      if (!summary.success) return;
+      const promises = [];
+      for (const purpose of ["pdf", "text"]) {
+        for (const provider of ALL_PROVIDERS) {
+          const s = summary.summary[purpose]?.[provider];
+          if (!s) continue;
+          // store model from summary; load keys list only if there are any
+          patchPP(purpose, provider, { model: s.model || defaultModelMap[provider] });
+          if (s.count > 0) {
+            promises.push(refreshKeyList(purpose, provider));
+          }
+        }
+      }
+      await Promise.all(promises);
+    } catch (e) {
+      console.error("Failed to load AI summary:", e);
+    }
+  };
+
+  const refreshKeyList = async (purpose, provider) => {
+    try {
+      const r = await listAiKeys(purpose, provider);
+      if (r.success) {
+        patchPP(purpose, provider, { list: r.keys || [], model: r.model || defaultModelMap[provider] });
       }
     } catch (e) {
-      console.error(`Failed to load ${purpose} keys:`, e);
+      console.error(`Failed to load ${purpose}/${provider} keys:`, e);
     }
   };
 
-  const handleTestStoredKey = async (purpose, index) => {
-    const id = `${purpose}-${index}`;
-    setKeyTestStatus(s => ({ ...s, [id]: { state: "testing" } }));
+  // Field updates inside the active provider card
+  const updateActiveCard = (field, value) => {
+    const purpose = configSubTab;
+    const provider = activeProvider[purpose];
+    const patch = { [field]: value };
+    if (field === "newKeys") {
+      patch.keysDirty = true;
+      // Auto-detect: if pasted key belongs to a different provider, swap the chip
+      const detected = detectProvider(value);
+      if (detected && detected !== provider) {
+        setActiveProvider(prev => ({ ...prev, [purpose]: detected }));
+        // Move the typed value to the detected provider's card so user keeps typing there
+        patchPP(purpose, detected, { newKeys: value, keysDirty: true });
+        // Clear the current provider's textarea since we redirected the input
+        patchPP(purpose, provider, { newKeys: "", keysDirty: false });
+        return;
+      }
+    }
+    patchPP(purpose, provider, patch);
+  };
+
+  const handleSaveCard = async () => {
+    const purpose = configSubTab;
+    const provider = activeProvider[purpose];
+    const card = aiState[purpose][provider];
     try {
-      const r = await testStoredAiKey(purpose, index);
-      setKeyTestStatus(s => ({
-        ...s,
-        [id]: {
-          state: r.success ? "ok" : "fail",
-          message: r.message,
-          latencyMs: r.latencyMs,
-          providerDetected: r.providerDetected,
-          providerOverridden: r.providerOverridden,
-        },
-      }));
-    } catch (e) {
-      setKeyTestStatus(s => ({
-        ...s,
-        [id]: { state: "fail", message: e?.response?.data?.message || e.message },
-      }));
+      setConfigLoading(true);
+      // Always persist the model for this (purpose, provider)
+      await apiSetProviderModel(purpose, provider, card.model);
+      let added = 0;
+      if (card.keysDirty && card.newKeys.trim()) {
+        const r = await apiAddAiKeys(purpose, provider, card.newKeys, card.model);
+        added = r.added || 0;
+      }
+      patchPP(purpose, provider, { newKeys: "", keysDirty: false });
+      await refreshKeyList(purpose, provider);
+      const purposeLabel = purpose === "pdf" ? "PDF Reading" : "Text Generation";
+      const providerLabel = providerLabels[provider];
+      showModal(
+        "success",
+        "Saved",
+        card.keysDirty
+          ? `${added} key${added === 1 ? "" : "s"} added to ${providerLabel} (${purposeLabel}). Form cleared — ready for the next key.`
+          : `${providerLabel} model saved for ${purposeLabel}.`
+      );
+    } catch (error) {
+      const msg = error?.response?.data?.message || "Failed to save settings. Please try again.";
+      showModal("error", "Save Rejected", msg);
+    } finally {
+      setConfigLoading(false);
     }
   };
 
-  // Open confirmation dialog
-  const handleDeleteStoredKey = (purpose, index, snippet) => {
-    setPendingKeyDelete({ purpose, index, snippet });
+  const handleTestStoredKey = async (purpose, provider, index) => {
+    const card = aiState[purpose][provider];
+    patchPP(purpose, provider, { testStatus: { ...card.testStatus, [index]: { state: "testing" } } });
+    try {
+      const r = await testStoredAiKey(purpose, provider, index);
+      const status = {
+        state: r.success ? "ok" : "fail",
+        message: r.message,
+        latencyMs: r.latencyMs,
+        modelUsed: r.modelUsed,
+      };
+      patchPP(purpose, provider, {
+        testStatus: { ...aiState[purpose][provider].testStatus, [index]: status },
+      });
+    } catch (e) {
+      patchPP(purpose, provider, {
+        testStatus: { ...aiState[purpose][provider].testStatus, [index]: { state: "fail", message: e?.response?.data?.message || e.message } },
+      });
+    }
+  };
+
+  const handleDeleteStoredKey = (purpose, provider, index, snippet) => {
+    setPendingKeyDelete({ purpose, provider, index, snippet });
     showModal(
       "warning",
       "Delete API Key?",
-      `This will permanently remove key #${index + 1} (${snippet}) from the ${purpose === "pdf" ? "PDF Reading" : "Text Generation"} pool. Requests that were using this key will fail until you add a replacement. This cannot be undone.`
+      `This will permanently remove key #${index + 1} (${snippet}) from the ${providerLabels[provider]} pool under ${purpose === "pdf" ? "PDF Reading" : "Text Generation"}. This cannot be undone.`
     );
   };
 
-  // Actually perform deletion when user confirms
   const confirmDeleteKey = async () => {
     if (!pendingKeyDelete) return;
-    const { purpose } = pendingKeyDelete;
+    const { purpose, provider, index } = pendingKeyDelete;
     try {
-      setActionLoading(`delete-key-${purpose}-${pendingKeyDelete.index}`);
-      await apiDeleteAiKey(purpose, pendingKeyDelete.index);
-      await refreshKeyList(purpose);
-      setKeyTestStatus(s => {
-        const next = { ...s };
-        Object.keys(next).forEach(k => { if (k.startsWith(`${purpose}-`)) delete next[k]; });
-        return next;
-      });
+      setActionLoading(`delete-key-${purpose}-${provider}-${index}`);
+      await apiDeleteAiKey(purpose, provider, index);
+      await refreshKeyList(purpose, provider);
       showModal("success", "Key Deleted", "API key removed from the pool.");
     } catch (e) {
       showModal("error", "Error", "Failed to delete key. Please try again.");
@@ -271,31 +360,24 @@ function SuperAdminDashboard() {
   };
 
   const handleTestInlineKey = async () => {
-    const cfg = configSubTab === "pdf" ? pdfConfig : textConfig;
-    const firstKey = (cfg.keys || "").split(",")[0]?.trim();
-    if (!firstKey || firstKey.includes("••••")) {
-      showModal("warning", "No new key", "Type a key in the textarea first to test it.");
+    const purpose = configSubTab;
+    const provider = activeProvider[purpose];
+    const card = aiState[purpose][provider];
+    const firstKey = (card.newKeys || "").split(",")[0]?.trim();
+    if (!firstKey) {
+      showModal("warning", "No new key", "Type a key in the textarea first.");
       return;
     }
-    const id = `${configSubTab}-inline`;
-    setKeyTestStatus(s => ({ ...s, [id]: { state: "testing" } }));
+    const id = `${purpose}-${provider}`;
+    setInlineTestStatus(s => ({ ...s, [id]: { state: "testing" } }));
     try {
-      const r = await testInlineAiKey(cfg.provider, cfg.model, firstKey);
-      setKeyTestStatus(s => ({
+      const r = await testInlineAiKey(provider, card.model, firstKey);
+      setInlineTestStatus(s => ({
         ...s,
-        [id]: {
-          state: r.success ? "ok" : "fail",
-          message: r.message,
-          latencyMs: r.latencyMs,
-          providerDetected: r.providerDetected,
-          providerOverridden: r.providerOverridden,
-        },
+        [id]: { state: r.success ? "ok" : "fail", message: r.message, latencyMs: r.latencyMs },
       }));
     } catch (e) {
-      setKeyTestStatus(s => ({
-        ...s,
-        [id]: { state: "fail", message: e?.response?.data?.message || e.message },
-      }));
+      setInlineTestStatus(s => ({ ...s, [id]: { state: "fail", message: e?.response?.data?.message || e.message } }));
     }
   };
 
@@ -312,86 +394,9 @@ function SuperAdminDashboard() {
   };
 
   const fetchConfigs = async () => {
-    try {
-      const response = await getAllConfigs();
-      if (!response.success) return;
-      const c = response.configs || {};
-      // Provider + model load from DB; keys textarea always starts empty —
-      // existing keys live in the stored-keys table below.
-      const pdfProvider = c.PDF_AI_PROVIDER || c.AI_PROVIDER || "gemini";
-      const pdfModel = c.PDF_AI_MODEL || c.AI_MODEL || "gemini-1.5-flash";
-      setPdfConfig(prev => ({ ...prev, provider: pdfProvider, model: pdfModel, keys: "", keysDirty: false, autoDetected: null }));
-      const textProvider = c.TEXT_AI_PROVIDER || c.AI_PROVIDER || "gemini";
-      const textModel = c.TEXT_AI_MODEL || c.AI_MODEL || "gemini-1.5-flash";
-      setTextConfig(prev => ({ ...prev, provider: textProvider, model: textModel, keys: "", keysDirty: false, autoDetected: null }));
-    } catch (error) {
-      console.error("Failed to fetch configs:", error);
-    }
-  };
-
-  const updatePurposeField = (which, field, value) => {
-    const setter = which === "pdf" ? setPdfConfig : setTextConfig;
-    setter(prev => {
-      const next = { ...prev, [field]: value };
-      if (field === "provider") {
-        next.model = modelOptions[value][0].value;
-      }
-      if (field === "keys") {
-        next.keysDirty = true;
-        // Auto-detect provider whenever a recognizable key is pasted — even if
-        // the pool already has keys. The save flow updates the pool's stored
-        // provider/model first, so validation passes and the new key is
-        // accepted under its correct provider.
-        const detected = detectProvider(value);
-        if (detected && detected !== prev.provider) {
-          next.provider = detected;
-          next.model = modelOptions[detected][0].value;
-          next.autoDetected = detected;
-        } else {
-          next.autoDetected = null;
-        }
-        next.providerMismatch = null;
-      }
-      return next;
-    });
-  };
-
-  const handleSavePurpose = async (which) => {
-    const cfg = which === "pdf" ? pdfConfig : textConfig;
-    const prefix = which === "pdf" ? "PDF_AI" : "TEXT_AI";
-    try {
-      setConfigLoading(true);
-      // 1) Always save provider + model
-      await bulkUpdateConfigs({
-        [`${prefix}_PROVIDER`]: cfg.provider,
-        [`${prefix}_MODEL`]: cfg.model,
-      });
-      // 2) If user typed new keys, APPEND them to the existing pool
-      let addedCount = 0;
-      if (cfg.keysDirty && cfg.keys.trim()) {
-        const r = await apiAddAiKeys(which, cfg.keys);
-        addedCount = r.added || 0;
-      }
-      // 3) Clear the textarea — ready for the next key. Stored keys show in table below.
-      const setter = which === "pdf" ? setPdfConfig : setTextConfig;
-      setter(prev => ({ ...prev, keys: "", keysDirty: false, autoDetected: null }));
-      // 4) Refresh stored keys table
-      await refreshKeyList(which);
-      // 5) Feedback
-      const purposeLabel = which === "pdf" ? "PDF Reading" : "Text Generation";
-      showModal(
-        "success",
-        "Saved",
-        cfg.keysDirty
-          ? `${purposeLabel} config saved. ${addedCount} new key${addedCount === 1 ? "" : "s"} added to the pool. Form cleared — ready for the next key.`
-          : `${purposeLabel} provider/model updated. No new keys to add.`
-      );
-    } catch (error) {
-      const msg = error?.response?.data?.message || "Failed to save settings. Please try again.";
-      showModal("error", "Save Rejected", msg);
-    } finally {
-      setConfigLoading(false);
-    }
+    // Per-provider models/keys come via refreshAllKeyLists (uses /ai-summary).
+    // This keeps the configs endpoint live for future non-AI settings.
+    try { await getAllConfigs(); } catch (e) { console.error("fetchConfigs:", e); }
   };
 
   const showModal = (type, title, message) => {
@@ -656,171 +661,172 @@ function SuperAdminDashboard() {
                   </div>
                 </div>
 
+                {/* Provider chip strip */}
                 {(() => {
-                  const cfg = configSubTab === "pdf" ? pdfConfig : textConfig;
-                  const accent = configSubTab === "pdf" ? "from-purple-600 to-pink-600" : "from-pink-600 to-purple-600";
+                  const purpose = configSubTab;
+                  const provider = activeProvider[purpose];
+                  const card = aiState[purpose][provider];
+                  const accent = purpose === "pdf" ? "from-purple-600 to-pink-600" : "from-pink-600 to-purple-600";
+                  const chipColors = {
+                    gemini:   { active: "bg-blue-600 text-white",     idle: "bg-blue-50 text-blue-700 hover:bg-blue-100" },
+                    groq:     { active: "bg-orange-600 text-white",   idle: "bg-orange-50 text-orange-700 hover:bg-orange-100" },
+                    openai:   { active: "bg-emerald-600 text-white",  idle: "bg-emerald-50 text-emerald-700 hover:bg-emerald-100" },
+                    claude:   { active: "bg-amber-600 text-white",    idle: "bg-amber-50 text-amber-700 hover:bg-amber-100" },
+                    mistral:  { active: "bg-rose-600 text-white",     idle: "bg-rose-50 text-rose-700 hover:bg-rose-100" },
+                    deepseek: { active: "bg-indigo-600 text-white",   idle: "bg-indigo-50 text-indigo-700 hover:bg-indigo-100" },
+                  };
                   return (
-                    <div className="space-y-6">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <>
+                      <div className="flex flex-wrap gap-2">
+                        {ALL_PROVIDERS.map(p => {
+                          const isActive = p === provider;
+                          const count = aiState[purpose][p].list.length;
+                          const c = chipColors[p];
+                          return (
+                            <button
+                              key={p}
+                              onClick={() => setActiveProvider(prev => ({ ...prev, [purpose]: p }))}
+                              className={`px-4 py-2 rounded-lg font-bold text-xs transition-all ${isActive ? c.active + " shadow-md" : c.idle}`}
+                            >
+                              {providerLabels[p]}
+                              {count > 0 && (
+                                <span className={`ml-2 px-1.5 py-0.5 rounded-full text-[10px] ${isActive ? "bg-white/20" : "bg-white"}`}>
+                                  {count}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="space-y-6 mt-2">
+                        {/* Model dropdown for the active (purpose × provider) */}
                         <div>
-                          <label className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">Select AI Provider</label>
+                          <label className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
+                            Model for {providerLabels[provider]}
+                          </label>
                           <select
-                            value={cfg.provider}
-                            onChange={(e) => updatePurposeField(configSubTab, "provider", e.target.value)}
-                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl outline-none text-sm font-semibold"
+                            value={card.model}
+                            onChange={(e) => updateActiveCard("model", e.target.value)}
+                            className="w-full md:w-1/2 px-4 py-3 border-2 border-gray-200 rounded-xl outline-none text-sm font-semibold"
                           >
-                            {Object.entries(providerLabels).map(([val, label]) => (
-                              <option key={val} value={val}>{label}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">Select AI Model</label>
-                          <select
-                            value={cfg.model}
-                            onChange={(e) => updatePurposeField(configSubTab, "model", e.target.value)}
-                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl outline-none text-sm font-semibold"
-                          >
-                            {(modelOptions[cfg.provider] || []).map(opt => (
+                            {(modelOptions[provider] || []).map(opt => (
                               <option key={opt.value} value={opt.value}>{opt.label}</option>
                             ))}
                           </select>
                         </div>
-                      </div>
-                      <div>
-                        <label className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
-                          Add New API Key{" "}
-                          <span className="font-normal text-gray-500">(comma-separated for bulk add)</span>
-                        </label>
-                        <textarea
-                          value={cfg.keys}
-                          onChange={(e) => updatePurposeField(configSubTab, "keys", e.target.value)}
-                          rows="4"
-                          className={`w-full px-4 py-3 border-2 rounded-xl outline-none text-sm font-mono ${cfg.keysDirty ? "border-purple-300 bg-purple-50/30" : "border-gray-200"}`}
-                          placeholder="Paste your new key here — form clears automatically after save"
-                        />
-                        <p className="text-xs text-gray-500 mt-2">
-                          {cfg.keysDirty
-                            ? `New key${cfg.keys.includes(",") ? "s" : ""} will be appended to the pool below when you save. Existing keys stay intact.`
-                            : `Type a key here to add it to the ${configSubTab === "pdf" ? "PDF Reading" : "Text Generation"} pool. Already-saved keys appear in the table below.`}
-                        </p>
-                        {cfg.autoDetected && (
-                          <div className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800">
-                            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                            Auto-detected: <strong>{providerLabels[cfg.autoDetected]}</strong> — provider & default model selected for you.
-                          </div>
-                        )}
-                      </div>
 
-                      {/* Inline test for the freshly-typed first key */}
-                      {cfg.keysDirty && (
-                        <div className="flex flex-wrap items-center gap-3 -mt-2">
+                        {/* Add-key textarea */}
+                        <div>
+                          <label className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
+                            Add New {providerLabels[provider]} API Key{" "}
+                            <span className="font-normal text-gray-500">(comma-separated for bulk add)</span>
+                          </label>
+                          <textarea
+                            value={card.newKeys}
+                            onChange={(e) => updateActiveCard("newKeys", e.target.value)}
+                            rows="3"
+                            className={`w-full px-4 py-3 border-2 rounded-xl outline-none text-sm font-mono ${card.keysDirty ? "border-purple-300 bg-purple-50/30" : "border-gray-200"}`}
+                            placeholder={`Paste your ${providerLabels[provider]} key here — pasting a different provider's key auto-switches the chip above`}
+                          />
+                          <p className="text-xs text-gray-500 mt-2">
+                            {card.keysDirty
+                              ? `Will be added to the ${providerLabels[provider]} pool when you save. Form clears after.`
+                              : `Type or paste a key. Auto-detects and switches provider if the prefix doesn't match.`}
+                          </p>
+                        </div>
+
+                        {/* Inline test + Save */}
+                        <div className="flex flex-wrap items-center gap-3">
+                          {card.keysDirty && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={handleTestInlineKey}
+                                className="px-4 py-2 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-lg text-xs font-bold transition-colors"
+                              >
+                                🔍 Test Before Saving
+                              </button>
+                              {inlineTestStatus[`${purpose}-${provider}`] && (
+                                <TestResultPill r={inlineTestStatus[`${purpose}-${provider}`]} />
+                              )}
+                            </>
+                          )}
                           <button
-                            type="button"
-                            onClick={handleTestInlineKey}
-                            className="px-4 py-2 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-lg text-xs font-bold transition-colors"
+                            onClick={handleSaveCard}
+                            disabled={configLoading}
+                            className={`flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r ${accent} text-white rounded-xl font-bold shadow-lg hover:scale-[1.02] disabled:opacity-50`}
                           >
-                            🔍 Test First Key Before Saving
+                            {configLoading ? <LoadingSpinner size="sm" /> : (
+                              <><FaSave /> {card.keysDirty ? `Add Key & Save (${providerLabels[provider]})` : `Save ${providerLabels[provider]} Model`}</>
+                            )}
                           </button>
-                          {keyTestStatus[`${configSubTab}-inline`] && (
-                            <TestResultPill r={keyTestStatus[`${configSubTab}-inline`]} />
+                        </div>
+
+                        {/* Stored keys table — ONLY this (purpose, provider) */}
+                        <div className="mt-6">
+                          <h4 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
+                            🔑 {providerLabels[provider]} Keys
+                            <span className="text-xs font-normal text-gray-500">({card.list.length} stored · {purpose === "pdf" ? "PDF Reading" : "Text Generation"})</span>
+                          </h4>
+                          {card.list.length === 0 ? (
+                            <div className="text-sm text-gray-500 italic px-4 py-6 bg-gray-50 rounded-xl border border-dashed border-gray-300 text-center">
+                              No {providerLabels[provider]} keys stored yet. Add one above.
+                            </div>
+                          ) : (
+                            <div className="overflow-x-auto rounded-xl border-2 border-gray-200">
+                              <table className="w-full text-sm">
+                                <thead className="bg-gradient-to-r from-gray-100 to-purple-50">
+                                  <tr className="text-left">
+                                    <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase">#</th>
+                                    <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase">Masked Key</th>
+                                    <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase">Model</th>
+                                    <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase">Status</th>
+                                    <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase">Actions</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200 bg-white">
+                                  {card.list.map((k) => {
+                                    const status = card.testStatus[k.index];
+                                    const delLoading = actionLoading === `delete-key-${purpose}-${provider}-${k.index}`;
+                                    return (
+                                      <tr key={k.index} className="hover:bg-purple-50/40">
+                                        <td className="px-4 py-3 text-gray-600 font-mono">{k.index + 1}</td>
+                                        <td className="px-4 py-3 font-mono text-gray-800">{k.snippet}</td>
+                                        <td className="px-4 py-3 text-xs text-gray-600 font-mono">{card.model}</td>
+                                        <td className="px-4 py-3">
+                                          {status ? <TestResultPill r={status} /> : <span className="text-xs text-gray-400">Not tested</span>}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          <div className="flex gap-2">
+                                            <button
+                                              onClick={() => handleTestStoredKey(purpose, provider, k.index)}
+                                              disabled={status?.state === "testing"}
+                                              className="px-3 py-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-md text-xs font-bold transition-colors disabled:opacity-50"
+                                            >
+                                              {status?.state === "testing" ? "Testing…" : "Test"}
+                                            </button>
+                                            <button
+                                              onClick={() => handleDeleteStoredKey(purpose, provider, k.index, k.snippet)}
+                                              disabled={delLoading}
+                                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 rounded-md text-xs font-bold transition-colors disabled:opacity-50"
+                                              title="Remove this key from the pool"
+                                            >
+                                              <FaTrash />
+                                              {delLoading ? "Deleting…" : "Delete"}
+                                            </button>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
                           )}
                         </div>
-                      )}
-
-                      <button
-                        onClick={() => handleSavePurpose(configSubTab)}
-                        disabled={configLoading}
-                        className={`flex items-center gap-2 px-8 py-3 bg-gradient-to-r ${accent} text-white rounded-xl font-bold shadow-lg hover:scale-[1.02] disabled:opacity-50`}
-                      >
-                        {configLoading ? <LoadingSpinner size="sm" /> : (
-                          <><FaSave /> {cfg.keysDirty ? "Add Key & Save Config" : "Save Configuration"}</>
-                        )}
-                      </button>
-
-                      {/* Stored keys table */}
-                      <div className="mt-8">
-                        <h4 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
-                          🔑 Stored Keys for {configSubTab === "pdf" ? "PDF Reading" : "Text Generation"}
-                          <span className="text-xs font-normal text-gray-500">({keyLists[configSubTab].length} configured)</span>
-                        </h4>
-                        {keyLists[configSubTab].length === 0 ? (
-                          <div className="text-sm text-gray-500 italic px-4 py-6 bg-gray-50 rounded-xl border border-dashed border-gray-300 text-center">
-                            No keys stored yet. Add and save one above.
-                          </div>
-                        ) : (
-                          <div className="overflow-x-auto rounded-xl border-2 border-gray-200">
-                            <table className="w-full text-sm">
-                              <thead className="bg-gradient-to-r from-gray-100 to-purple-50">
-                                <tr className="text-left">
-                                  <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase">#</th>
-                                  <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase">Masked Key</th>
-                                  <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase">Provider</th>
-                                  <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase">Model</th>
-                                  <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase">Status</th>
-                                  <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase">Actions</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-gray-200 bg-white">
-                                {keyLists[configSubTab].map((k) => {
-                                  const id = `${configSubTab}-${k.index}`;
-                                  const status = keyTestStatus[id];
-                                  // Each row's provider is inferred from the masked key's prefix —
-                                  // NOT from the current pool dropdown — so mixed-provider pools
-                                  // display each key under its own real provider.
-                                  const rowProvider = detectProvider(k.snippet) || cfg.provider;
-                                  const matchesPool = rowProvider === cfg.provider;
-                                  const providerBadgeColor = matchesPool
-                                    ? "bg-purple-100 text-purple-800"
-                                    : "bg-amber-100 text-amber-800";
-                                  return (
-                                    <tr key={k.index} className="hover:bg-purple-50/40">
-                                      <td className="px-4 py-3 text-gray-600 font-mono">{k.index + 1}</td>
-                                      <td className="px-4 py-3 font-mono text-gray-800">{k.snippet}</td>
-                                      <td className="px-4 py-3">
-                                        <span
-                                          className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-semibold ${providerBadgeColor}`}
-                                          title={matchesPool ? "" : `This key belongs to ${providerLabels[rowProvider]}, but the pool is now configured for ${providerLabels[cfg.provider]}. Production calls will fail for this key — delete it or switch the pool's provider back.`}
-                                        >
-                                          {providerLabels[rowProvider] || rowProvider}
-                                          {!matchesPool && <span className="ml-1">⚠</span>}
-                                        </span>
-                                      </td>
-                                      <td className="px-4 py-3 text-xs text-gray-600 font-mono">
-                                        {matchesPool ? cfg.model : <span className="italic text-gray-400">orphaned</span>}
-                                      </td>
-                                      <td className="px-4 py-3">
-                                        {status ? <TestResultPill r={status} /> : <span className="text-xs text-gray-400">Not tested</span>}
-                                      </td>
-                                      <td className="px-4 py-3">
-                                        <div className="flex gap-2">
-                                          <button
-                                            onClick={() => handleTestStoredKey(configSubTab, k.index)}
-                                            disabled={status?.state === "testing"}
-                                            className="px-3 py-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-md text-xs font-bold transition-colors disabled:opacity-50"
-                                          >
-                                            {status?.state === "testing" ? "Testing…" : "Test"}
-                                          </button>
-                                          <button
-                                            onClick={() => handleDeleteStoredKey(configSubTab, k.index, k.snippet)}
-                                            disabled={actionLoading === `delete-key-${configSubTab}-${k.index}`}
-                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 rounded-md text-xs font-bold transition-colors disabled:opacity-50"
-                                            title="Remove this key from the pool"
-                                          >
-                                            <FaTrash />
-                                            {actionLoading === `delete-key-${configSubTab}-${k.index}` ? "Deleting…" : "Delete"}
-                                          </button>
-                                        </div>
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-                        )}
                       </div>
-                    </div>
+                    </>
                   );
                 })()}
               </div>
@@ -836,7 +842,7 @@ function SuperAdminDashboard() {
         title={modal.title}
         loading={
           (pendingDelete && actionLoading === `delete-${pendingDelete.userId}`) ||
-          (pendingKeyDelete && actionLoading === `delete-key-${pendingKeyDelete.purpose}-${pendingKeyDelete.index}`)
+          (pendingKeyDelete && actionLoading === `delete-key-${pendingKeyDelete.purpose}-${pendingKeyDelete.provider}-${pendingKeyDelete.index}`)
         }
         confirmText={pendingKeyDelete ? "Delete Key" : "Delete User"}
       >
