@@ -138,14 +138,13 @@ function SuperAdminDashboard() {
   };
   const modelOptions = {
     gemini: [
+      { value: "gemini-2.5-flash",      label: "Gemini 2.5 Flash (recommended)" },
       { value: "gemini-2.5-pro",        label: "Gemini 2.5 Pro" },
-      { value: "gemini-2.5-flash",      label: "Gemini 2.5 Flash" },
       { value: "gemini-2.0-flash",      label: "Gemini 2.0 Flash" },
+      { value: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash-Lite" },
       { value: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash-Lite" },
-      { value: "gemini-1.5-pro",        label: "Gemini 1.5 Pro" },
-      { value: "gemini-1.5-flash",      label: "Gemini 1.5 Flash" },
       { value: "gemini-1.5-flash-8b",   label: "Gemini 1.5 Flash 8B" },
-      { value: "gemini-pro",            label: "Gemini Pro (legacy)" },
+      // gemini-1.5-pro / 1.5-flash / pro removed — retired by Google in late 2025
     ],
     groq: [
       { value: "llama-3.3-70b-versatile",        label: "Llama 3.3 70B Versatile" },
