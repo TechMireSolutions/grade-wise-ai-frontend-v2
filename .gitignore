@@ -1,5 +1,9 @@
 node_modules/
-.env
 dist/
 .DS_Store
-*.local
+
+# Local-only env overrides (machine-specific). The committed .env.development
+# and .env.production are picked up automatically by Vite for `dev` and `build`.
+.env
+.env.local
+.env.*.local

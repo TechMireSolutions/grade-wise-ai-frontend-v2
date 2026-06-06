@@ -182,7 +182,7 @@ function App() {
           <Route
             path="/instructor/dashboard"
             element={
-              <ProtectedRoute requiredRole="instructor">
+              <ProtectedRoute requiredRole={["instructor", "admin", "super_admin"]}>
                 <MainLayout>
                   <InstructorDashboard />
                 </MainLayout>
@@ -206,7 +206,7 @@ function App() {
               key={path}
               path={path}
               element={
-                <ProtectedRoute requiredRole="instructor">
+                <ProtectedRoute requiredRole={["instructor", "admin", "super_admin"]}>
                   <MainLayout>
                     <Component />
                   </MainLayout>
