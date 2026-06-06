@@ -4,7 +4,14 @@ import useAuthStore from "../../store/authStore.js";
 import { Card, CardHeader, CardContent } from "../../components/ui/Card.jsx";
 import LoadingSpinner from "../../components/ui/LoadingSpinner.jsx";
 import Modal from "../../components/ui/Modal.jsx";
-import { getAllConfigs, bulkUpdateConfigs } from "../../api/config.api.js";
+import {
+  getAllConfigs,
+  bulkUpdateConfigs,
+  listAiKeys,
+  deleteAiKey as apiDeleteAiKey,
+  testStoredAiKey,
+  testInlineAiKey,
+} from "../../api/config.api.js";
 import {
   FaUser,
   FaUsers,  
@@ -27,6 +34,38 @@ import {
   FaSave,
 } from "react-icons/fa";
 
+// Tiny pill showing the outcome of an API-key test.
+function TestResultPill({ r }) {
+  if (!r) return null;
+  if (r.state === "testing") {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-semibold">
+        <span className="inline-block w-2 h-2 rounded-full bg-gray-400 animate-pulse" />
+        Testing…
+      </span>
+    );
+  }
+  if (r.state === "ok") {
+    return (
+      <span
+        title={r.message}
+        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-semibold"
+      >
+        ✓ OK
+        {typeof r.latencyMs === "number" && <span className="font-mono opacity-70">{r.latencyMs}ms</span>}
+      </span>
+    );
+  }
+  return (
+    <span
+      title={r.message}
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-red-100 text-red-800 rounded-full text-xs font-semibold max-w-xs truncate"
+    >
+      ✗ {(r.message || "Failed").substring(0, 60)}
+    </span>
+  );
+}
+
 function SuperAdminDashboard() {
   const { user, getUsers, changeUserRole, deleteUser } = useAuthStore();
   const [users, setUsers] = useState([]);
@@ -48,6 +87,9 @@ function SuperAdminDashboard() {
   const [pdfConfig, setPdfConfig] = useState(blankPurpose("gemini", "gemini-1.5-flash"));
   const [textConfig, setTextConfig] = useState(blankPurpose("gemini", "gemini-1.5-flash"));
   const [configSubTab, setConfigSubTab] = useState("pdf"); // "pdf" | "text"
+  // Per-purpose list of stored keys with masked snippet & test status
+  const [keyLists, setKeyLists] = useState({ pdf: [], text: [] });
+  const [keyTestStatus, setKeyTestStatus] = useState({}); // { 'pdf-0': {state, message, latencyMs} }
 
   // Comprehensive model catalog. Keep newest at the top of each list so the
   // default (first item) is always the current flagship.
@@ -142,7 +184,83 @@ function SuperAdminDashboard() {
   useEffect(() => {
     fetchUsers();
     fetchConfigs();
+    refreshKeyList("pdf");
+    refreshKeyList("text");
   }, []);
+
+  const refreshKeyList = async (purpose) => {
+    try {
+      const resp = await listAiKeys(purpose);
+      if (resp.success) {
+        setKeyLists(prev => ({ ...prev, [purpose]: resp.keys || [] }));
+      }
+    } catch (e) {
+      console.error(`Failed to load ${purpose} keys:`, e);
+    }
+  };
+
+  const handleTestStoredKey = async (purpose, index) => {
+    const id = `${purpose}-${index}`;
+    setKeyTestStatus(s => ({ ...s, [id]: { state: "testing" } }));
+    try {
+      const r = await testStoredAiKey(purpose, index);
+      setKeyTestStatus(s => ({
+        ...s,
+        [id]: {
+          state: r.success ? "ok" : "fail",
+          message: r.message,
+          latencyMs: r.latencyMs,
+        },
+      }));
+    } catch (e) {
+      setKeyTestStatus(s => ({
+        ...s,
+        [id]: { state: "fail", message: e?.response?.data?.message || e.message },
+      }));
+    }
+  };
+
+  const handleDeleteStoredKey = async (purpose, index) => {
+    try {
+      await apiDeleteAiKey(purpose, index);
+      await refreshKeyList(purpose);
+      // Clear test status for any stale ids
+      setKeyTestStatus(s => {
+        const next = { ...s };
+        Object.keys(next).forEach(k => { if (k.startsWith(`${purpose}-`)) delete next[k]; });
+        return next;
+      });
+    } catch (e) {
+      showModal("error", "Error", "Failed to delete key. Please try again.");
+    }
+  };
+
+  const handleTestInlineKey = async () => {
+    const cfg = configSubTab === "pdf" ? pdfConfig : textConfig;
+    const firstKey = (cfg.keys || "").split(",")[0]?.trim();
+    if (!firstKey || firstKey.includes("••••")) {
+      showModal("warning", "No new key", "Type a key in the textarea first to test it.");
+      return;
+    }
+    const id = `${configSubTab}-inline`;
+    setKeyTestStatus(s => ({ ...s, [id]: { state: "testing" } }));
+    try {
+      const r = await testInlineAiKey(cfg.provider, cfg.model, firstKey);
+      setKeyTestStatus(s => ({
+        ...s,
+        [id]: {
+          state: r.success ? "ok" : "fail",
+          message: r.message,
+          latencyMs: r.latencyMs,
+        },
+      }));
+    } catch (e) {
+      setKeyTestStatus(s => ({
+        ...s,
+        [id]: { state: "fail", message: e?.response?.data?.message || e.message },
+      }));
+    }
+  };
 
   const fetchUsers = async () => {
     try {
@@ -215,8 +333,9 @@ function SuperAdminDashboard() {
         "Saved",
         `${which === "pdf" ? "PDF Reading" : "Text Generation"} configuration updated.${cfg.keysDirty ? " API keys stored securely." : " (Keys unchanged.)"}`
       );
-      // Refresh so newly-saved keys come back masked
+      // Refresh so newly-saved keys come back masked + reload the per-key list
       await fetchConfigs();
+      await refreshKeyList(which);
     } catch (error) {
       showModal("error", "Error", "Failed to save settings. Please try again.");
     } finally {
@@ -552,6 +671,23 @@ function SuperAdminDashboard() {
                           </div>
                         )}
                       </div>
+
+                      {/* Inline test for the freshly-typed first key */}
+                      {cfg.keysDirty && (
+                        <div className="flex flex-wrap items-center gap-3 -mt-2">
+                          <button
+                            type="button"
+                            onClick={handleTestInlineKey}
+                            className="px-4 py-2 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-lg text-xs font-bold transition-colors"
+                          >
+                            🔍 Test First Key Before Saving
+                          </button>
+                          {keyTestStatus[`${configSubTab}-inline`] && (
+                            <TestResultPill r={keyTestStatus[`${configSubTab}-inline`]} />
+                          )}
+                        </div>
+                      )}
+
                       <button
                         onClick={() => handleSavePurpose(configSubTab)}
                         disabled={configLoading}
@@ -559,6 +695,73 @@ function SuperAdminDashboard() {
                       >
                         {configLoading ? <LoadingSpinner size="sm" /> : <><FaSave /> Save {configSubTab === "pdf" ? "PDF Reading" : "Text Generation"} Configuration</>}
                       </button>
+
+                      {/* Stored keys table */}
+                      <div className="mt-8">
+                        <h4 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
+                          🔑 Stored Keys for {configSubTab === "pdf" ? "PDF Reading" : "Text Generation"}
+                          <span className="text-xs font-normal text-gray-500">({keyLists[configSubTab].length} configured)</span>
+                        </h4>
+                        {keyLists[configSubTab].length === 0 ? (
+                          <div className="text-sm text-gray-500 italic px-4 py-6 bg-gray-50 rounded-xl border border-dashed border-gray-300 text-center">
+                            No keys stored yet. Add and save one above.
+                          </div>
+                        ) : (
+                          <div className="overflow-x-auto rounded-xl border-2 border-gray-200">
+                            <table className="w-full text-sm">
+                              <thead className="bg-gradient-to-r from-gray-100 to-purple-50">
+                                <tr className="text-left">
+                                  <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase">#</th>
+                                  <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase">Masked Key</th>
+                                  <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase">Provider</th>
+                                  <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase">Model</th>
+                                  <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase">Status</th>
+                                  <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase">Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-200 bg-white">
+                                {keyLists[configSubTab].map((k) => {
+                                  const id = `${configSubTab}-${k.index}`;
+                                  const status = keyTestStatus[id];
+                                  return (
+                                    <tr key={k.index} className="hover:bg-purple-50/40">
+                                      <td className="px-4 py-3 text-gray-600 font-mono">{k.index + 1}</td>
+                                      <td className="px-4 py-3 font-mono text-gray-800">{k.snippet}</td>
+                                      <td className="px-4 py-3">
+                                        <span className="inline-flex items-center px-2 py-1 bg-purple-100 text-purple-800 rounded-md text-xs font-semibold">
+                                          {providerLabels[cfg.provider] || cfg.provider}
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-3 text-xs text-gray-600 font-mono">{cfg.model}</td>
+                                      <td className="px-4 py-3">
+                                        {status ? <TestResultPill r={status} /> : <span className="text-xs text-gray-400">Not tested</span>}
+                                      </td>
+                                      <td className="px-4 py-3">
+                                        <div className="flex gap-2">
+                                          <button
+                                            onClick={() => handleTestStoredKey(configSubTab, k.index)}
+                                            disabled={status?.state === "testing"}
+                                            className="px-3 py-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-md text-xs font-bold transition-colors disabled:opacity-50"
+                                          >
+                                            {status?.state === "testing" ? "Testing…" : "Test"}
+                                          </button>
+                                          <button
+                                            onClick={() => handleDeleteStoredKey(configSubTab, k.index)}
+                                            className="px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 rounded-md text-xs font-bold transition-colors"
+                                            title="Remove this key"
+                                          >
+                                            <FaTrash />
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   );
                 })()}
