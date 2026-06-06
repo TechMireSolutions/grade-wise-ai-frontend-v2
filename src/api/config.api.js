@@ -20,6 +20,11 @@ export const listAiKeys = async (purpose) => {
   return response.data;
 };
 
+export const addAiKeys = async (purpose, keys) => {
+  const response = await apiClient.post("/config/ai-keys/add", { purpose, keys });
+  return response.data;
+};
+
 export const deleteAiKey = async (purpose, index) => {
   const response = await apiClient.delete("/config/ai-keys", { data: { purpose, index } });
   return response.data;

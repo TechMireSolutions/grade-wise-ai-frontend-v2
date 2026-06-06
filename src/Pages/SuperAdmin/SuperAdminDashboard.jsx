@@ -8,6 +8,7 @@ import {
   getAllConfigs,
   bulkUpdateConfigs,
   listAiKeys,
+  addAiKeys as apiAddAiKeys,
   deleteAiKey as apiDeleteAiKey,
   testStoredAiKey,
   testInlineAiKey,
@@ -297,16 +298,14 @@ function SuperAdminDashboard() {
       const response = await getAllConfigs();
       if (!response.success) return;
       const c = response.configs || {};
-      // PDF — fall back to legacy AI_* if PDF_* not set
+      // Provider + model load from DB; keys textarea always starts empty —
+      // existing keys live in the stored-keys table below.
       const pdfProvider = c.PDF_AI_PROVIDER || c.AI_PROVIDER || "gemini";
       const pdfModel = c.PDF_AI_MODEL || c.AI_MODEL || "gemini-1.5-flash";
-      const pdfKeys = c.PDF_AI_KEYS || c.AI_KEYS || ""; // server-side masked
-      setPdfConfig({ provider: pdfProvider, model: pdfModel, keys: pdfKeys, keysDirty: false });
-      // Text — fall back to legacy AI_*
+      setPdfConfig(prev => ({ ...prev, provider: pdfProvider, model: pdfModel, keys: "", keysDirty: false, autoDetected: null }));
       const textProvider = c.TEXT_AI_PROVIDER || c.AI_PROVIDER || "gemini";
       const textModel = c.TEXT_AI_MODEL || c.AI_MODEL || "gemini-1.5-flash";
-      const textKeys = c.TEXT_AI_KEYS || c.AI_KEYS || ""; // server-side masked
-      setTextConfig({ provider: textProvider, model: textModel, keys: textKeys, keysDirty: false });
+      setTextConfig(prev => ({ ...prev, provider: textProvider, model: textModel, keys: "", keysDirty: false, autoDetected: null }));
     } catch (error) {
       console.error("Failed to fetch configs:", error);
     }
@@ -338,22 +337,33 @@ function SuperAdminDashboard() {
   const handleSavePurpose = async (which) => {
     const cfg = which === "pdf" ? pdfConfig : textConfig;
     const prefix = which === "pdf" ? "PDF_AI" : "TEXT_AI";
-    const payload = {
-      [`${prefix}_PROVIDER`]: cfg.provider,
-      [`${prefix}_MODEL`]: cfg.model,
-    };
-    if (cfg.keysDirty) payload[`${prefix}_KEYS`] = cfg.keys;
     try {
       setConfigLoading(true);
-      await bulkUpdateConfigs(payload);
+      // 1) Always save provider + model
+      await bulkUpdateConfigs({
+        [`${prefix}_PROVIDER`]: cfg.provider,
+        [`${prefix}_MODEL`]: cfg.model,
+      });
+      // 2) If user typed new keys, APPEND them to the existing pool
+      let addedCount = 0;
+      if (cfg.keysDirty && cfg.keys.trim()) {
+        const r = await apiAddAiKeys(which, cfg.keys);
+        addedCount = r.added || 0;
+      }
+      // 3) Clear the textarea — ready for the next key. Stored keys show in table below.
+      const setter = which === "pdf" ? setPdfConfig : setTextConfig;
+      setter(prev => ({ ...prev, keys: "", keysDirty: false, autoDetected: null }));
+      // 4) Refresh stored keys table
+      await refreshKeyList(which);
+      // 5) Feedback
+      const purposeLabel = which === "pdf" ? "PDF Reading" : "Text Generation";
       showModal(
         "success",
         "Saved",
-        `${which === "pdf" ? "PDF Reading" : "Text Generation"} configuration updated.${cfg.keysDirty ? " API keys stored securely." : " (Keys unchanged.)"}`
+        cfg.keysDirty
+          ? `${purposeLabel} config saved. ${addedCount} new key${addedCount === 1 ? "" : "s"} added to the pool. Form cleared — ready for the next key.`
+          : `${purposeLabel} provider/model updated. No new keys to add.`
       );
-      // Refresh so newly-saved keys come back masked + reload the per-key list
-      await fetchConfigs();
-      await refreshKeyList(which);
     } catch (error) {
       showModal("error", "Error", "Failed to save settings. Please try again.");
     } finally {
@@ -655,32 +665,21 @@ function SuperAdminDashboard() {
                         </div>
                       </div>
                       <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <label className="text-sm font-bold text-gray-700 flex items-center gap-2">Enter API Keys (comma-separated)</label>
-                          {!cfg.keysDirty && cfg.keys && (
-                            <button
-                              type="button"
-                              onClick={() => updatePurposeField(configSubTab, "keys", "")}
-                              className="text-xs text-purple-600 hover:text-purple-800 font-semibold underline"
-                            >
-                              Replace keys
-                            </button>
-                          )}
-                        </div>
+                        <label className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
+                          Add New API Key{" "}
+                          <span className="font-normal text-gray-500">(comma-separated for bulk add)</span>
+                        </label>
                         <textarea
                           value={cfg.keys}
                           onChange={(e) => updatePurposeField(configSubTab, "keys", e.target.value)}
                           rows="4"
                           className={`w-full px-4 py-3 border-2 rounded-xl outline-none text-sm font-mono ${cfg.keysDirty ? "border-purple-300 bg-purple-50/30" : "border-gray-200"}`}
-                          placeholder="key1, key2, key3..."
-                          readOnly={!cfg.keysDirty && cfg.keys.includes("••••")}
+                          placeholder="Paste your new key here — form clears automatically after save"
                         />
                         <p className="text-xs text-gray-500 mt-2">
-                          {cfg.keys.includes("••••") && !cfg.keysDirty
-                            ? "Existing keys are masked for security. Click 'Replace keys' to set new ones."
-                            : cfg.keysDirty
-                              ? "New keys will be saved to the database when you click Save."
-                              : "Add keys to enable this configuration."}
+                          {cfg.keysDirty
+                            ? `New key${cfg.keys.includes(",") ? "s" : ""} will be appended to the pool below when you save. Existing keys stay intact.`
+                            : `Type a key here to add it to the ${configSubTab === "pdf" ? "PDF Reading" : "Text Generation"} pool. Already-saved keys appear in the table below.`}
                         </p>
                         {cfg.autoDetected && (
                           <div className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800">
@@ -711,7 +710,9 @@ function SuperAdminDashboard() {
                         disabled={configLoading}
                         className={`flex items-center gap-2 px-8 py-3 bg-gradient-to-r ${accent} text-white rounded-xl font-bold shadow-lg hover:scale-[1.02] disabled:opacity-50`}
                       >
-                        {configLoading ? <LoadingSpinner size="sm" /> : <><FaSave /> Save {configSubTab === "pdf" ? "PDF Reading" : "Text Generation"} Configuration</>}
+                        {configLoading ? <LoadingSpinner size="sm" /> : (
+                          <><FaSave /> {cfg.keysDirty ? "Add Key & Save Config" : "Save Configuration"}</>
+                        )}
                       </button>
 
                       {/* Stored keys table */}
