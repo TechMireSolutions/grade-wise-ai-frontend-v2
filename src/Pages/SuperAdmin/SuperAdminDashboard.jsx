@@ -765,16 +765,30 @@ function SuperAdminDashboard() {
                                 {keyLists[configSubTab].map((k) => {
                                   const id = `${configSubTab}-${k.index}`;
                                   const status = keyTestStatus[id];
+                                  // Each row's provider is inferred from the masked key's prefix —
+                                  // NOT from the current pool dropdown — so mixed-provider pools
+                                  // display each key under its own real provider.
+                                  const rowProvider = detectProvider(k.snippet) || cfg.provider;
+                                  const matchesPool = rowProvider === cfg.provider;
+                                  const providerBadgeColor = matchesPool
+                                    ? "bg-purple-100 text-purple-800"
+                                    : "bg-amber-100 text-amber-800";
                                   return (
                                     <tr key={k.index} className="hover:bg-purple-50/40">
                                       <td className="px-4 py-3 text-gray-600 font-mono">{k.index + 1}</td>
                                       <td className="px-4 py-3 font-mono text-gray-800">{k.snippet}</td>
                                       <td className="px-4 py-3">
-                                        <span className="inline-flex items-center px-2 py-1 bg-purple-100 text-purple-800 rounded-md text-xs font-semibold">
-                                          {providerLabels[cfg.provider] || cfg.provider}
+                                        <span
+                                          className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-semibold ${providerBadgeColor}`}
+                                          title={matchesPool ? "" : `This key belongs to ${providerLabels[rowProvider]}, but the pool is now configured for ${providerLabels[cfg.provider]}. Production calls will fail for this key — delete it or switch the pool's provider back.`}
+                                        >
+                                          {providerLabels[rowProvider] || rowProvider}
+                                          {!matchesPool && <span className="ml-1">⚠</span>}
                                         </span>
                                       </td>
-                                      <td className="px-4 py-3 text-xs text-gray-600 font-mono">{cfg.model}</td>
+                                      <td className="px-4 py-3 text-xs text-gray-600 font-mono">
+                                        {matchesPool ? cfg.model : <span className="italic text-gray-400">orphaned</span>}
+                                      </td>
                                       <td className="px-4 py-3">
                                         {status ? <TestResultPill r={status} /> : <span className="text-xs text-gray-400">Not tested</span>}
                                       </td>
