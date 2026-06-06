@@ -48,22 +48,36 @@ function TestResultPill({ r }) {
   }
   if (r.state === "ok") {
     return (
-      <span
-        title={r.message}
-        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-semibold"
-      >
-        ✓ OK
-        {typeof r.latencyMs === "number" && <span className="font-mono opacity-70">{r.latencyMs}ms</span>}
-      </span>
+      <div className="flex flex-col gap-1">
+        <span
+          title={r.message}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-semibold w-fit"
+        >
+          ✓ OK
+          {typeof r.latencyMs === "number" && <span className="font-mono opacity-70">{r.latencyMs}ms</span>}
+        </span>
+        {r.providerOverridden && (
+          <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+            ⚠ Key is actually a <strong>{r.providerDetected}</strong> key — move it to the right provider pool.
+          </span>
+        )}
+      </div>
     );
   }
   return (
-    <span
-      title={r.message}
-      className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-red-100 text-red-800 rounded-full text-xs font-semibold max-w-xs truncate"
-    >
-      ✗ {(r.message || "Failed").substring(0, 60)}
-    </span>
+    <div className="flex flex-col gap-1">
+      <span
+        title={r.message}
+        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-red-100 text-red-800 rounded-full text-xs font-semibold max-w-xs truncate w-fit"
+      >
+        ✗ {(r.message || "Failed").substring(0, 60)}
+      </span>
+      {r.providerOverridden && (
+        <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+          ⚠ Key prefix suggests <strong>{r.providerDetected}</strong>, not your saved provider.
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -212,6 +226,8 @@ function SuperAdminDashboard() {
           state: r.success ? "ok" : "fail",
           message: r.message,
           latencyMs: r.latencyMs,
+          providerDetected: r.providerDetected,
+          providerOverridden: r.providerOverridden,
         },
       }));
     } catch (e) {
@@ -271,6 +287,8 @@ function SuperAdminDashboard() {
           state: r.success ? "ok" : "fail",
           message: r.message,
           latencyMs: r.latencyMs,
+          providerDetected: r.providerDetected,
+          providerOverridden: r.providerOverridden,
         },
       }));
     } catch (e) {
