@@ -58,6 +58,11 @@ function TestResultPill({ r }) {
           ✓ OK
           {typeof r.latencyMs === "number" && <span className="font-mono opacity-70">{r.latencyMs}ms</span>}
         </span>
+        {r.autoSwitchedModelFrom && (
+          <span className="text-[10px] text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+            🔧 Model auto-switched: <code>{r.autoSwitchedModelFrom}</code> → <code>{r.modelUsed}</code> (saved).
+          </span>
+        )}
         {r.providerOverridden && (
           <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
             ⚠ Key is actually a <strong>{r.providerDetected}</strong> key — move it to the right provider pool.
@@ -265,6 +270,9 @@ function SuperAdminDashboard() {
     const purpose = configSubTab;
     const provider = activeProvider[purpose];
     const patch = { [field]: value };
+    if (field === "model") {
+      patch.modelManuallyChanged = true;
+    }
     if (field === "newKeys") {
       patch.keysDirty = true;
       // Auto-detect: if pasted key belongs to a different provider, swap the chip
@@ -287,24 +295,37 @@ function SuperAdminDashboard() {
     const card = aiState[purpose][provider];
     try {
       setConfigLoading(true);
-      // Always persist the model for this (purpose, provider)
-      await apiSetProviderModel(purpose, provider, card.model);
       let added = 0;
+      let autoPickedModel = null;
+      let autoPickedSource = null;
       if (card.keysDirty && card.newKeys.trim()) {
-        const r = await apiAddAiKeys(purpose, provider, card.newKeys, card.model);
+        // Add the key WITHOUT a model override — let backend auto-discover the
+        // best model this key has access to. If user manually changed the model
+        // dropdown, send that as an override instead.
+        const explicitModel = card.modelManuallyChanged ? card.model : undefined;
+        const r = await apiAddAiKeys(purpose, provider, card.newKeys, explicitModel);
         added = r.added || 0;
+        autoPickedModel = r.autoPickedModel;
+        autoPickedSource = r.autoPickedSource;
+      } else {
+        // No new key — just persist the model dropdown choice
+        await apiSetProviderModel(purpose, provider, card.model);
       }
-      patchPP(purpose, provider, { newKeys: "", keysDirty: false });
+      patchPP(purpose, provider, { newKeys: "", keysDirty: false, modelManuallyChanged: false });
       await refreshKeyList(purpose, provider);
       const purposeLabel = purpose === "pdf" ? "PDF Reading" : "Text Generation";
       const providerLabel = providerLabels[provider];
-      showModal(
-        "success",
-        "Saved",
-        card.keysDirty
-          ? `${added} key${added === 1 ? "" : "s"} added to ${providerLabel} (${purposeLabel}). Form cleared — ready for the next key.`
-          : `${providerLabel} model saved for ${purposeLabel}.`
-      );
+      let msg;
+      if (card.keysDirty) {
+        msg = `${added} key${added === 1 ? "" : "s"} added to ${providerLabel} (${purposeLabel}).`;
+        if (autoPickedModel && autoPickedSource && autoPickedSource !== "default") {
+          msg += ` Model auto-selected: ${autoPickedModel} (${autoPickedSource === "listed" ? "discovered from key's available models" : "verified via probe"}).`;
+        }
+        msg += " Form cleared — ready for the next key.";
+      } else {
+        msg = `${providerLabel} model saved for ${purposeLabel}.`;
+      }
+      showModal("success", "Saved", msg);
     } catch (error) {
       const msg = error?.response?.data?.message || "Failed to save settings. Please try again.";
       showModal("error", "Save Rejected", msg);
@@ -323,10 +344,16 @@ function SuperAdminDashboard() {
         message: r.message,
         latencyMs: r.latencyMs,
         modelUsed: r.modelUsed,
+        autoSwitchedModelFrom: r.autoSwitchedModelFrom,
       };
       patchPP(purpose, provider, {
         testStatus: { ...aiState[purpose][provider].testStatus, [index]: status },
       });
+      // If the backend auto-fixed a dead model, refresh so the new model
+      // shows in the dropdown and table.
+      if (r.autoSwitchedModelFrom) {
+        await refreshKeyList(purpose, provider);
+      }
     } catch (e) {
       patchPP(purpose, provider, {
         testStatus: { ...aiState[purpose][provider].testStatus, [index]: { state: "fail", message: e?.response?.data?.message || e.message } },
