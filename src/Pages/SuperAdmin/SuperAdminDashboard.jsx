@@ -331,7 +331,6 @@ function SuperAdminDashboard() {
 
   const updatePurposeField = (which, field, value) => {
     const setter = which === "pdf" ? setPdfConfig : setTextConfig;
-    const poolHasKeys = (keyLists[which] || []).length > 0;
     setter(prev => {
       const next = { ...prev, [field]: value };
       if (field === "provider") {
@@ -339,25 +338,19 @@ function SuperAdminDashboard() {
       }
       if (field === "keys") {
         next.keysDirty = true;
+        // Auto-detect provider whenever a recognizable key is pasted — even if
+        // the pool already has keys. The save flow updates the pool's stored
+        // provider/model first, so validation passes and the new key is
+        // accepted under its correct provider.
         const detected = detectProvider(value);
-        // Behavior split:
-        //   - Empty pool: auto-detect can freely switch the pool provider.
-        //   - Pool has saved keys: provider is LOCKED. We only flag a mismatch
-        //     so the UI can warn and the save button can disable.
         if (detected && detected !== prev.provider) {
-          if (poolHasKeys) {
-            next.autoDetected = null;
-            next.providerMismatch = detected; // surfaces a warning in the UI
-          } else {
-            next.provider = detected;
-            next.model = modelOptions[detected][0].value;
-            next.autoDetected = detected;
-            next.providerMismatch = null;
-          }
+          next.provider = detected;
+          next.model = modelOptions[detected][0].value;
+          next.autoDetected = detected;
         } else {
           next.autoDetected = null;
-          next.providerMismatch = null;
         }
+        next.providerMismatch = null;
       }
       return next;
     });
@@ -717,13 +710,6 @@ function SuperAdminDashboard() {
                             Auto-detected: <strong>{providerLabels[cfg.autoDetected]}</strong> — provider & default model selected for you.
                           </div>
                         )}
-                        {cfg.providerMismatch && (
-                          <div className="mt-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800">
-                            <strong>⚠ Wrong pool:</strong> this looks like a <strong>{providerLabels[cfg.providerMismatch]}</strong> key, but
-                            this pool is locked to <strong>{providerLabels[cfg.provider]}</strong> (it already has stored keys).
-                            Switch to the {providerLabels[cfg.providerMismatch]} tab/provider — or paste a {providerLabels[cfg.provider]} key here instead.
-                          </div>
-                        )}
                       </div>
 
                       {/* Inline test for the freshly-typed first key */}
@@ -744,9 +730,8 @@ function SuperAdminDashboard() {
 
                       <button
                         onClick={() => handleSavePurpose(configSubTab)}
-                        disabled={configLoading || !!cfg.providerMismatch}
-                        title={cfg.providerMismatch ? "Resolve the provider mismatch before saving" : ""}
-                        className={`flex items-center gap-2 px-8 py-3 bg-gradient-to-r ${accent} text-white rounded-xl font-bold shadow-lg hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100`}
+                        disabled={configLoading}
+                        className={`flex items-center gap-2 px-8 py-3 bg-gradient-to-r ${accent} text-white rounded-xl font-bold shadow-lg hover:scale-[1.02] disabled:opacity-50`}
                       >
                         {configLoading ? <LoadingSpinner size="sm" /> : (
                           <><FaSave /> {cfg.keysDirty ? "Add Key & Save Config" : "Save Configuration"}</>
