@@ -49,31 +49,93 @@ function SuperAdminDashboard() {
   const [textConfig, setTextConfig] = useState(blankPurpose("gemini", "gemini-1.5-flash"));
   const [configSubTab, setConfigSubTab] = useState("pdf"); // "pdf" | "text"
 
+  // Comprehensive model catalog. Keep newest at the top of each list so the
+  // default (first item) is always the current flagship.
+  const providerLabels = {
+    gemini: "Google Gemini",
+    groq:   "Groq AI",
+    openai: "OpenAI",
+    claude: "Anthropic Claude",
+    mistral:"Mistral AI",
+    deepseek:"DeepSeek",
+  };
   const modelOptions = {
     gemini: [
-      { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
-      { value: "gemini-1.5-flash", label: "Gemini 1.5 Flash" },
-      { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro" },
-      { value: "gemini-pro", label: "Gemini Pro" },
+      { value: "gemini-2.5-pro",        label: "Gemini 2.5 Pro" },
+      { value: "gemini-2.5-flash",      label: "Gemini 2.5 Flash" },
+      { value: "gemini-2.0-flash",      label: "Gemini 2.0 Flash" },
+      { value: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash-Lite" },
+      { value: "gemini-1.5-pro",        label: "Gemini 1.5 Pro" },
+      { value: "gemini-1.5-flash",      label: "Gemini 1.5 Flash" },
+      { value: "gemini-1.5-flash-8b",   label: "Gemini 1.5 Flash 8B" },
+      { value: "gemini-pro",            label: "Gemini Pro (legacy)" },
     ],
     groq: [
-      { value: "llama3-8b-8192", label: "Llama 3 8B" },
-      { value: "llama3-70b-8192", label: "Llama 3 70B" },
-      { value: "mixtral-8x7b-32768", label: "Mixtral 8x7B" },
-      { value: "gemma-7b-it", label: "Gemma 7B" },
+      { value: "llama-3.3-70b-versatile",        label: "Llama 3.3 70B Versatile" },
+      { value: "llama-3.1-70b-versatile",        label: "Llama 3.1 70B Versatile" },
+      { value: "llama-3.1-8b-instant",           label: "Llama 3.1 8B Instant" },
+      { value: "llama3-70b-8192",                label: "Llama 3 70B (8K ctx)" },
+      { value: "llama3-8b-8192",                 label: "Llama 3 8B (8K ctx)" },
+      { value: "mixtral-8x7b-32768",             label: "Mixtral 8x7B" },
+      { value: "gemma2-9b-it",                   label: "Gemma 2 9B IT" },
+      { value: "gemma-7b-it",                    label: "Gemma 7B IT" },
+      { value: "deepseek-r1-distill-llama-70b",  label: "DeepSeek R1 Distill Llama 70B" },
     ],
     openai: [
-      { value: "gpt-4o", label: "GPT-4o" },
-      { value: "gpt-4o-mini", label: "GPT-4o Mini" },
-      { value: "gpt-4-turbo", label: "GPT-4 Turbo" },
-      { value: "gpt-3.5-turbo", label: "GPT-3.5 Turbo" },
+      { value: "gpt-5",            label: "GPT-5" },
+      { value: "gpt-5-mini",       label: "GPT-5 Mini" },
+      { value: "o3",               label: "o3" },
+      { value: "o3-mini",          label: "o3-mini" },
+      { value: "o1",               label: "o1" },
+      { value: "o1-mini",          label: "o1-mini" },
+      { value: "o1-preview",       label: "o1-preview" },
+      { value: "gpt-4o",           label: "GPT-4o" },
+      { value: "gpt-4o-mini",      label: "GPT-4o Mini" },
+      { value: "gpt-4-turbo",      label: "GPT-4 Turbo" },
+      { value: "gpt-4",            label: "GPT-4" },
+      { value: "gpt-3.5-turbo",    label: "GPT-3.5 Turbo" },
     ],
     claude: [
-      { value: "claude-3-5-sonnet-20240620", label: "Claude 3.5 Sonnet" },
-      { value: "claude-3-opus-20240229", label: "Claude 3 Opus" },
-      { value: "claude-3-sonnet-20240229", label: "Claude 3 Sonnet" },
-      { value: "claude-3-haiku-20240307", label: "Claude 3 Haiku" },
-    ]
+      { value: "claude-opus-4-5",              label: "Claude 4.5 Opus" },
+      { value: "claude-sonnet-4-5",            label: "Claude 4.5 Sonnet" },
+      { value: "claude-opus-4-1",              label: "Claude 4.1 Opus" },
+      { value: "claude-sonnet-4",              label: "Claude 4 Sonnet" },
+      { value: "claude-3-7-sonnet-20250219",   label: "Claude 3.7 Sonnet" },
+      { value: "claude-3-5-sonnet-20241022",   label: "Claude 3.5 Sonnet (v2)" },
+      { value: "claude-3-5-sonnet-20240620",   label: "Claude 3.5 Sonnet (v1)" },
+      { value: "claude-3-5-haiku-20241022",    label: "Claude 3.5 Haiku" },
+      { value: "claude-3-opus-20240229",       label: "Claude 3 Opus" },
+      { value: "claude-3-sonnet-20240229",     label: "Claude 3 Sonnet" },
+      { value: "claude-3-haiku-20240307",      label: "Claude 3 Haiku" },
+    ],
+    mistral: [
+      { value: "mistral-large-latest",       label: "Mistral Large" },
+      { value: "mistral-medium-latest",      label: "Mistral Medium" },
+      { value: "mistral-small-latest",       label: "Mistral Small" },
+      { value: "open-mistral-nemo",          label: "Mistral Nemo" },
+      { value: "codestral-latest",           label: "Codestral" },
+    ],
+    deepseek: [
+      { value: "deepseek-chat",      label: "DeepSeek Chat (V3)" },
+      { value: "deepseek-reasoner",  label: "DeepSeek Reasoner (R1)" },
+      { value: "deepseek-coder",     label: "DeepSeek Coder" },
+    ],
+  };
+
+  // Auto-detect provider from the first API key in the textarea.
+  // Returns provider id or null. Patterns are based on official key prefixes.
+  const detectProvider = (text) => {
+    if (!text) return null;
+    const k = text.split(",")[0].trim();
+    if (!k) return null;
+    if (k.startsWith("sk-ant-"))                 return "claude";
+    if (k.startsWith("gsk_"))                    return "groq";
+    if (k.startsWith("sk-proj-") || k.startsWith("sk-svcacct-") || k.startsWith("sk-")) return "openai";
+    if (k.startsWith("AIza") || k.startsWith("AQ.")) return "gemini";
+    // Mistral keys are 32-char hex (no prefix). DeepSeek keys start with sk- too,
+    // but those collide with OpenAI — we keep OpenAI as the default for sk-*.
+    if (/^[a-zA-Z0-9]{32}$/.test(k))             return "mistral";
+    return null;
   };
   const [configLoading, setConfigLoading] = useState(false);
 
@@ -118,8 +180,21 @@ function SuperAdminDashboard() {
     const setter = which === "pdf" ? setPdfConfig : setTextConfig;
     setter(prev => {
       const next = { ...prev, [field]: value };
-      if (field === "provider") next.model = modelOptions[value][0].value;
-      if (field === "keys") next.keysDirty = true;
+      if (field === "provider") {
+        next.model = modelOptions[value][0].value;
+      }
+      if (field === "keys") {
+        next.keysDirty = true;
+        // Auto-detect provider when a recognizable key is typed/pasted.
+        const detected = detectProvider(value);
+        if (detected && detected !== prev.provider) {
+          next.provider = detected;
+          next.model = modelOptions[detected][0].value;
+          next.autoDetected = detected;
+        } else {
+          next.autoDetected = null;
+        }
+      }
       return next;
     });
   };
@@ -424,10 +499,9 @@ function SuperAdminDashboard() {
                             onChange={(e) => updatePurposeField(configSubTab, "provider", e.target.value)}
                             className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl outline-none text-sm font-semibold"
                           >
-                            <option value="gemini">Google Gemini</option>
-                            <option value="groq">Groq AI</option>
-                            <option value="openai">OpenAI</option>
-                            <option value="claude">Anthropic Claude</option>
+                            {Object.entries(providerLabels).map(([val, label]) => (
+                              <option key={val} value={val}>{label}</option>
+                            ))}
                           </select>
                         </div>
                         <div>
@@ -471,6 +545,12 @@ function SuperAdminDashboard() {
                               ? "New keys will be saved to the database when you click Save."
                               : "Add keys to enable this configuration."}
                         </p>
+                        {cfg.autoDetected && (
+                          <div className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800">
+                            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                            Auto-detected: <strong>{providerLabels[cfg.autoDetected]}</strong> — provider & default model selected for you.
+                          </div>
+                        )}
                       </div>
                       <button
                         onClick={() => handleSavePurpose(configSubTab)}
