@@ -90,6 +90,7 @@ function SuperAdminDashboard() {
   // Per-purpose list of stored keys with masked snippet & test status
   const [keyLists, setKeyLists] = useState({ pdf: [], text: [] });
   const [keyTestStatus, setKeyTestStatus] = useState({}); // { 'pdf-0': {state, message, latencyMs} }
+  const [pendingKeyDelete, setPendingKeyDelete] = useState(null); // { purpose, index, snippet }
 
   // Comprehensive model catalog. Keep newest at the top of each list so the
   // default (first item) is always the current flagship.
@@ -220,18 +221,35 @@ function SuperAdminDashboard() {
     }
   };
 
-  const handleDeleteStoredKey = async (purpose, index) => {
+  // Open confirmation dialog
+  const handleDeleteStoredKey = (purpose, index, snippet) => {
+    setPendingKeyDelete({ purpose, index, snippet });
+    showModal(
+      "warning",
+      "Delete API Key?",
+      `This will permanently remove key #${index + 1} (${snippet}) from the ${purpose === "pdf" ? "PDF Reading" : "Text Generation"} pool. Requests that were using this key will fail until you add a replacement. This cannot be undone.`
+    );
+  };
+
+  // Actually perform deletion when user confirms
+  const confirmDeleteKey = async () => {
+    if (!pendingKeyDelete) return;
+    const { purpose } = pendingKeyDelete;
     try {
-      await apiDeleteAiKey(purpose, index);
+      setActionLoading(`delete-key-${purpose}-${pendingKeyDelete.index}`);
+      await apiDeleteAiKey(purpose, pendingKeyDelete.index);
       await refreshKeyList(purpose);
-      // Clear test status for any stale ids
       setKeyTestStatus(s => {
         const next = { ...s };
         Object.keys(next).forEach(k => { if (k.startsWith(`${purpose}-`)) delete next[k]; });
         return next;
       });
+      showModal("success", "Key Deleted", "API key removed from the pool.");
     } catch (e) {
       showModal("error", "Error", "Failed to delete key. Please try again.");
+    } finally {
+      setActionLoading(null);
+      setPendingKeyDelete(null);
     }
   };
 
@@ -746,11 +764,13 @@ function SuperAdminDashboard() {
                                             {status?.state === "testing" ? "Testing…" : "Test"}
                                           </button>
                                           <button
-                                            onClick={() => handleDeleteStoredKey(configSubTab, k.index)}
-                                            className="px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 rounded-md text-xs font-bold transition-colors"
-                                            title="Remove this key"
+                                            onClick={() => handleDeleteStoredKey(configSubTab, k.index, k.snippet)}
+                                            disabled={actionLoading === `delete-key-${configSubTab}-${k.index}`}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 rounded-md text-xs font-bold transition-colors disabled:opacity-50"
+                                            title="Remove this key from the pool"
                                           >
                                             <FaTrash />
+                                            {actionLoading === `delete-key-${configSubTab}-${k.index}` ? "Deleting…" : "Delete"}
                                           </button>
                                         </div>
                                       </td>
@@ -770,7 +790,18 @@ function SuperAdminDashboard() {
           </Card>
         )}
       </div>
-      <Modal isOpen={modal.isOpen} onClose={() => { setModal({ ...modal, isOpen: false }); setPendingDelete(null); }} onConfirm={pendingDelete ? confirmDeleteUser : undefined} type={modal.type} title={modal.title} loading={pendingDelete && actionLoading === `delete-${pendingDelete.userId}`} confirmText="Delete User">
+      <Modal
+        isOpen={modal.isOpen}
+        onClose={() => { setModal({ ...modal, isOpen: false }); setPendingDelete(null); setPendingKeyDelete(null); }}
+        onConfirm={pendingDelete ? confirmDeleteUser : (pendingKeyDelete ? confirmDeleteKey : undefined)}
+        type={modal.type}
+        title={modal.title}
+        loading={
+          (pendingDelete && actionLoading === `delete-${pendingDelete.userId}`) ||
+          (pendingKeyDelete && actionLoading === `delete-key-${pendingKeyDelete.purpose}-${pendingKeyDelete.index}`)
+        }
+        confirmText={pendingKeyDelete ? "Delete Key" : "Delete User"}
+      >
         {modal.message}
       </Modal>
     </div>
