@@ -36,12 +36,18 @@ function SuperAdminDashboard() {
   const [actionLoading, setActionLoading] = useState(null);
   const [pendingDelete, setPendingDelete] = useState(null);
 
-  // Config State
-  const [configs, setConfigs] = useState({
-    AI_PROVIDER: "gemini",
-    AI_KEYS: "",
-    AI_MODEL: "gemini-1.5-flash",
+  // Config State — split by purpose (PDF reading vs. text generation).
+  // `keysDirty` tracks whether the user actually typed a new key; if false on save,
+  // we skip the keys field so the masked value never overwrites the real keys in DB.
+  const blankPurpose = (defaultProvider, defaultModel) => ({
+    provider: defaultProvider,
+    model: defaultModel,
+    keys: "",
+    keysDirty: false,
   });
+  const [pdfConfig, setPdfConfig] = useState(blankPurpose("gemini", "gemini-1.5-flash"));
+  const [textConfig, setTextConfig] = useState(blankPurpose("gemini", "gemini-1.5-flash"));
+  const [configSubTab, setConfigSubTab] = useState("pdf"); // "pdf" | "text"
 
   const modelOptions = {
     gemini: [
@@ -69,16 +75,6 @@ function SuperAdminDashboard() {
       { value: "claude-3-haiku-20240307", label: "Claude 3 Haiku" },
     ]
   };
-
-  const detectProvider = (key) => {
-    const k = key.split(',')[0].trim();
-    if (!k) return null;
-    if (k.startsWith("gsk_")) return "groq";
-    if (k.startsWith("sk-ant-")) return "claude";
-    if (k.startsWith("sk-")) return "openai";
-    if (k.startsWith("AIza") || k.startsWith("AQ.")) return "gemini";
-    return null;
-  };
   const [configLoading, setConfigLoading] = useState(false);
 
   useEffect(() => {
@@ -101,48 +97,51 @@ function SuperAdminDashboard() {
   const fetchConfigs = async () => {
     try {
       const response = await getAllConfigs();
-      if (response.success) {
-        setConfigs({
-          AI_PROVIDER: response.configs.AI_PROVIDER || "gemini",
-          AI_KEYS: response.configs.AI_KEYS || "",
-          AI_MODEL: response.configs.AI_MODEL || "gemini-1.5-flash",
-        });
-      }
+      if (!response.success) return;
+      const c = response.configs || {};
+      // PDF — fall back to legacy AI_* if PDF_* not set
+      const pdfProvider = c.PDF_AI_PROVIDER || c.AI_PROVIDER || "gemini";
+      const pdfModel = c.PDF_AI_MODEL || c.AI_MODEL || "gemini-1.5-flash";
+      const pdfKeys = c.PDF_AI_KEYS || c.AI_KEYS || ""; // server-side masked
+      setPdfConfig({ provider: pdfProvider, model: pdfModel, keys: pdfKeys, keysDirty: false });
+      // Text — fall back to legacy AI_*
+      const textProvider = c.TEXT_AI_PROVIDER || c.AI_PROVIDER || "gemini";
+      const textModel = c.TEXT_AI_MODEL || c.AI_MODEL || "gemini-1.5-flash";
+      const textKeys = c.TEXT_AI_KEYS || c.AI_KEYS || ""; // server-side masked
+      setTextConfig({ provider: textProvider, model: textModel, keys: textKeys, keysDirty: false });
     } catch (error) {
       console.error("Failed to fetch configs:", error);
     }
   };
 
-  const handleConfigChange = (e) => {
-    const { name, value } = e.target;
-    
-    if (name === "AI_KEYS") {
-      const detected = detectProvider(value);
-      if (detected) {
-        setConfigs(prev => ({
-          ...prev,
-          AI_KEYS: value,
-          AI_PROVIDER: detected,
-          AI_MODEL: modelOptions[detected][0].value
-        }));
-        return;
-      }
-    }
-
-    setConfigs(prev => {
-      const newConfigs = { ...prev, [name]: value };
-      if (name === "AI_PROVIDER") {
-        newConfigs.AI_MODEL = modelOptions[value][0].value;
-      }
-      return newConfigs;
+  const updatePurposeField = (which, field, value) => {
+    const setter = which === "pdf" ? setPdfConfig : setTextConfig;
+    setter(prev => {
+      const next = { ...prev, [field]: value };
+      if (field === "provider") next.model = modelOptions[value][0].value;
+      if (field === "keys") next.keysDirty = true;
+      return next;
     });
   };
 
-  const handleSaveConfigs = async () => {
+  const handleSavePurpose = async (which) => {
+    const cfg = which === "pdf" ? pdfConfig : textConfig;
+    const prefix = which === "pdf" ? "PDF_AI" : "TEXT_AI";
+    const payload = {
+      [`${prefix}_PROVIDER`]: cfg.provider,
+      [`${prefix}_MODEL`]: cfg.model,
+    };
+    if (cfg.keysDirty) payload[`${prefix}_KEYS`] = cfg.keys;
     try {
       setConfigLoading(true);
-      await bulkUpdateConfigs(configs);
-      showModal("success", "Settings Saved", "System configurations have been updated successfully.");
+      await bulkUpdateConfigs(payload);
+      showModal(
+        "success",
+        "Saved",
+        `${which === "pdf" ? "PDF Reading" : "Text Generation"} configuration updated.${cfg.keysDirty ? " API keys stored securely." : " (Keys unchanged.)"}`
+      );
+      // Refresh so newly-saved keys come back masked
+      await fetchConfigs();
     } catch (error) {
       showModal("error", "Error", "Failed to save settings. Please try again.");
     } finally {
@@ -379,38 +378,110 @@ function SuperAdminDashboard() {
             </CardHeader>
             <CardContent className="p-6 sm:p-8 lg:p-10">
               <div className="max-w-4xl space-y-8">
-                <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-xl">
-                  <div className="flex items-center gap-3">
-                    <FaCog className="text-blue-500 animate-spin-slow" />
-                    <div><h4 className="font-bold text-blue-800">API Key Configuration</h4><p className="text-sm text-blue-700">Add multiple keys separated by commas for load balancing and redundancy.</p></div>
-                  </div>
-                </div>
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">Select AI Provider</label>
-                      <select name="AI_PROVIDER" value={configs.AI_PROVIDER} onChange={handleConfigChange} className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl outline-none text-sm font-semibold">
-                        <option value="gemini">Google Gemini</option>
-                        <option value="groq">Groq AI</option>
-                        <option value="openai">OpenAI</option>
-                        <option value="claude">Anthropic Claude</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">Select AI Model</label>
-                      <select name="AI_MODEL" value={configs.AI_MODEL} onChange={handleConfigChange} className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl outline-none text-sm font-semibold">
-                        {(modelOptions[configs.AI_PROVIDER] || []).map(opt => (<option key={opt.value} value={opt.value}>{opt.label}</option>))}
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">Enter API Keys (separated by commas)</label>
-                    <textarea name="AI_KEYS" value={configs.AI_KEYS} onChange={handleConfigChange} rows="4" className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl outline-none text-sm font-mono" placeholder="key1, key2..." />
-                  </div>
-                  <button onClick={handleSaveConfigs} disabled={configLoading} className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-pink-600 to-purple-600 text-white rounded-xl font-bold shadow-lg hover:scale-[1.02] disabled:opacity-50">
-                    {configLoading ? <LoadingSpinner size="sm" /> : <><FaSave /> Save System Configuration</>}
+                {/* Sub-tab switcher */}
+                <div className="flex flex-wrap gap-3 border-b border-gray-200 pb-3">
+                  <button
+                    onClick={() => setConfigSubTab("pdf")}
+                    className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all ${configSubTab === "pdf" ? "bg-purple-600 text-white shadow-lg" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+                  >
+                    📄 PDF Reading
+                  </button>
+                  <button
+                    onClick={() => setConfigSubTab("text")}
+                    className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all ${configSubTab === "text" ? "bg-pink-600 text-white shadow-lg" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+                  >
+                    ✍️ Text Generation
                   </button>
                 </div>
+
+                <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-xl">
+                  <div className="flex items-start gap-3">
+                    <FaCog className="text-blue-500 animate-spin-slow mt-0.5" />
+                    <div>
+                      <h4 className="font-bold text-blue-800">
+                        {configSubTab === "pdf" ? "PDF Reading — API Keys" : "Text Generation — API Keys"}
+                      </h4>
+                      <p className="text-sm text-blue-700">
+                        {configSubTab === "pdf"
+                          ? "Used when the system extracts content from uploaded PDFs."
+                          : "Used when the system generates questions, feedback, and answers."}
+                        {" Multiple keys (comma-separated) are load-balanced automatically. Keys are stored encrypted in the database — never shown again after save."}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {(() => {
+                  const cfg = configSubTab === "pdf" ? pdfConfig : textConfig;
+                  const accent = configSubTab === "pdf" ? "from-purple-600 to-pink-600" : "from-pink-600 to-purple-600";
+                  return (
+                    <div className="space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                          <label className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">Select AI Provider</label>
+                          <select
+                            value={cfg.provider}
+                            onChange={(e) => updatePurposeField(configSubTab, "provider", e.target.value)}
+                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl outline-none text-sm font-semibold"
+                          >
+                            <option value="gemini">Google Gemini</option>
+                            <option value="groq">Groq AI</option>
+                            <option value="openai">OpenAI</option>
+                            <option value="claude">Anthropic Claude</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">Select AI Model</label>
+                          <select
+                            value={cfg.model}
+                            onChange={(e) => updatePurposeField(configSubTab, "model", e.target.value)}
+                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl outline-none text-sm font-semibold"
+                          >
+                            {(modelOptions[cfg.provider] || []).map(opt => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="text-sm font-bold text-gray-700 flex items-center gap-2">Enter API Keys (comma-separated)</label>
+                          {!cfg.keysDirty && cfg.keys && (
+                            <button
+                              type="button"
+                              onClick={() => updatePurposeField(configSubTab, "keys", "")}
+                              className="text-xs text-purple-600 hover:text-purple-800 font-semibold underline"
+                            >
+                              Replace keys
+                            </button>
+                          )}
+                        </div>
+                        <textarea
+                          value={cfg.keys}
+                          onChange={(e) => updatePurposeField(configSubTab, "keys", e.target.value)}
+                          rows="4"
+                          className={`w-full px-4 py-3 border-2 rounded-xl outline-none text-sm font-mono ${cfg.keysDirty ? "border-purple-300 bg-purple-50/30" : "border-gray-200"}`}
+                          placeholder="key1, key2, key3..."
+                          readOnly={!cfg.keysDirty && cfg.keys.includes("••••")}
+                        />
+                        <p className="text-xs text-gray-500 mt-2">
+                          {cfg.keys.includes("••••") && !cfg.keysDirty
+                            ? "Existing keys are masked for security. Click 'Replace keys' to set new ones."
+                            : cfg.keysDirty
+                              ? "New keys will be saved to the database when you click Save."
+                              : "Add keys to enable this configuration."}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleSavePurpose(configSubTab)}
+                        disabled={configLoading}
+                        className={`flex items-center gap-2 px-8 py-3 bg-gradient-to-r ${accent} text-white rounded-xl font-bold shadow-lg hover:scale-[1.02] disabled:opacity-50`}
+                      >
+                        {configLoading ? <LoadingSpinner size="sm" /> : <><FaSave /> Save {configSubTab === "pdf" ? "PDF Reading" : "Text Generation"} Configuration</>}
+                      </button>
+                    </div>
+                  );
+                })()}
               </div>
             </CardContent>
           </Card>
