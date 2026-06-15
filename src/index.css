@@ -1,1 +1,12 @@
 @import "tailwindcss";
+@custom-variant dark (&:is(.dark *));
+
+/* Global dark mode base — ensures the whole page goes dark even on pages not yet updated */
+html {
+  transition: background-color 200ms ease-out, color 200ms ease-out;
+}
+html.dark {
+  background-color: rgb(2 6 23);   /* slate-950 */
+  color: rgb(248 250 252);          /* slate-50 */
+  color-scheme: dark;
+}

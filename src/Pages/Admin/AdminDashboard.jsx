@@ -32,7 +32,7 @@ function AdminDashboard() {
       setLoading(true);
       const response = await getUsers();
       setUsers(response.users);
-    } catch (error) {
+    } catch {
       showModal("error", "Error", "Failed to fetch users. Please try again.");
     } finally {
       setLoading(false);
