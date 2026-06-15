@@ -36,6 +36,9 @@ const AdminDashboard = lazy(() =>
 const SuperAdminDashboard = lazy(() =>
   import("./Pages/SuperAdmin/SuperAdminDashboard")
 );
+const SuperAdminApiConfig = lazy(() =>
+  import("./Pages/SuperAdmin/SuperAdminApiConfig")
+);
 
 /* Instructor */
 const InstructorDashboard = lazy(() =>
@@ -161,6 +164,17 @@ function App() {
               <ProtectedRoute requiredRole="super_admin">
                 <MainLayout>
                   <SuperAdminDashboard />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/super-admin/api-config"
+            element={
+              <ProtectedRoute requiredRole="super_admin">
+                <MainLayout>
+                  <SuperAdminApiConfig />
                 </MainLayout>
               </ProtectedRoute>
             }
