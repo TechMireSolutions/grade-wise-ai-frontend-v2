@@ -4,7 +4,6 @@ import useAuthStore from "../../store/authStore.js";
 import { Card, CardHeader, CardContent } from "../../components/ui/Card.jsx";
 import LoadingSpinner from "../../components/ui/LoadingSpinner.jsx";
 import Modal from "../../components/ui/Modal.jsx";
-import { getAllConfigs } from "../../api/config.api.js";
 import {
   FaUsers,
   FaCheckCircle,
@@ -16,7 +15,6 @@ import {
   FaSync,
   FaShieldAlt,
   FaKey,
-  FaPlus,
   FaArrowRight,
 } from "react-icons/fa";
 
@@ -30,7 +28,6 @@ function SuperAdminDashboard() {
 
   useEffect(() => {
     fetchUsers();
-    getAllConfigs().catch(e => console.error("fetchConfigs:", e));
   }, []);
 
   const showModal = (type, title, message) =>
@@ -89,8 +86,10 @@ function SuperAdminDashboard() {
     }
   };
 
+  const filteredUsers = users.filter(u => u.role !== "super_admin");
+
   const getUserStats = () =>
-    users.reduce(
+    filteredUsers.reduce(
       (acc, u) => {
         acc[u.role] = (acc[u.role] || 0) + 1;
         acc.verified += u.verified ? 1 : 0;
@@ -130,8 +129,6 @@ function SuperAdminDashboard() {
       default:            return role;
     }
   };
-
-  const filteredUsers = users.filter(u => u.role !== "super_admin");
 
   const statsData = [
     { value: filteredUsers.length, label: "Total Users",  icon: <FaUsers className="w-6 h-6 sm:w-7 sm:h-7" />,            color: "text-violet-600 dark:text-violet-400",  bgColor: "bg-violet-50 dark:bg-violet-900/30",  borderColor: "border-violet-200 dark:border-violet-700" },
@@ -222,12 +219,6 @@ function SuperAdminDashboard() {
                 <FaUsers className="text-xl sm:text-2xl" /> Platform Users Management
               </h2>
               <div className="flex flex-wrap gap-2">
-                <Link
-                  to="/instructor/students"
-                  className="inline-flex items-center gap-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl transition-all duration-200 ease-out font-semibold text-sm sm:text-base shadow-lg hover:shadow-xl min-h-[44px]"
-                >
-                  <FaPlus /> Add User
-                </Link>
                 <button
                   onClick={fetchUsers}
                   className="inline-flex items-center gap-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl transition-all duration-200 ease-out font-semibold text-sm sm:text-base shadow-lg hover:shadow-xl min-h-[44px]"

@@ -89,7 +89,7 @@ const defaultModelMap = {
   gemini:   "gemini-2.0-flash",
   groq:     "llama-3.3-70b-versatile",
   openai:   "gpt-4o-mini",
-  claude:   "claude-3-5-sonnet-20241022",
+  claude:   "claude-sonnet-4-6",
   mistral:  "mistral-large-latest",
   deepseek: "deepseek-chat",
 };
@@ -138,17 +138,12 @@ const modelOptions = {
     { value: "gpt-3.5-turbo", label: "GPT-3.5 Turbo" },
   ],
   claude: [
-    { value: "claude-opus-4-5",            label: "Claude 4.5 Opus" },
-    { value: "claude-sonnet-4-5",          label: "Claude 4.5 Sonnet" },
-    { value: "claude-opus-4-1",            label: "Claude 4.1 Opus" },
-    { value: "claude-sonnet-4",            label: "Claude 4 Sonnet" },
-    { value: "claude-3-7-sonnet-20250219", label: "Claude 3.7 Sonnet" },
-    { value: "claude-3-5-sonnet-20241022", label: "Claude 3.5 Sonnet (v2)" },
-    { value: "claude-3-5-sonnet-20240620", label: "Claude 3.5 Sonnet (v1)" },
-    { value: "claude-3-5-haiku-20241022",  label: "Claude 3.5 Haiku" },
-    { value: "claude-3-opus-20240229",     label: "Claude 3 Opus" },
-    { value: "claude-3-sonnet-20240229",   label: "Claude 3 Sonnet" },
-    { value: "claude-3-haiku-20240307",    label: "Claude 3 Haiku" },
+    { value: "claude-fable-5",    label: "Claude Fable 5 (most capable)" },
+    { value: "claude-opus-4-8",   label: "Claude Opus 4.8" },
+    { value: "claude-opus-4-7",   label: "Claude Opus 4.7" },
+    { value: "claude-opus-4-6",   label: "Claude Opus 4.6" },
+    { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6 (recommended)" },
+    { value: "claude-haiku-4-5",  label: "Claude Haiku 4.5" },
   ],
   mistral: [
     { value: "mistral-large-latest",  label: "Mistral Large" },
@@ -370,17 +365,31 @@ function SuperAdminApiConfig() {
         modelUsed:            r.modelUsed,
         autoSwitchedModelFrom: r.autoSwitchedModelFrom,
       };
-      patchPP(purpose, provider, {
-        testStatus: { ...aiState[purpose][provider].testStatus, [index]: status },
-      });
+      setAiState(prev => ({
+        ...prev,
+        [purpose]: {
+          ...prev[purpose],
+          [provider]: {
+            ...prev[purpose][provider],
+            testStatus: { ...prev[purpose][provider].testStatus, [index]: status },
+          },
+        },
+      }));
       if (r.autoSwitchedModelFrom) await refreshKeyList(purpose, provider);
     } catch (e) {
-      patchPP(purpose, provider, {
-        testStatus: {
-          ...aiState[purpose][provider].testStatus,
-          [index]: { state: "fail", message: e?.response?.data?.message || e.message },
+      setAiState(prev => ({
+        ...prev,
+        [purpose]: {
+          ...prev[purpose],
+          [provider]: {
+            ...prev[purpose][provider],
+            testStatus: {
+              ...prev[purpose][provider].testStatus,
+              [index]: { state: "fail", message: e?.response?.data?.message || e.message },
+            },
+          },
         },
-      });
+      }));
     }
   };
 
